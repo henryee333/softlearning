@@ -361,6 +361,8 @@ ENVIRONMENT_PARAMS = {
             'target_x_range': (0.0, 0.0),
             'target_y_range': (0.0, 0.0),
             'target_z_rotation_range': (np.pi, np.pi),
+            'render_collision_mesh': True,
+            'render_visual_mesh': False,
             'observation_keys': (
                 'image',
 
