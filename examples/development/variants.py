@@ -47,6 +47,7 @@ MAX_PATH_LENGTH_PER_DOMAIN = {
     'HardwareDClaw3': 100,
     'Pendulum': 200,
     'Pusher2d': 100,
+    'InvisibleArm': 250,
 }
 
 ALGORITHM_PARAMS_BASE = {
@@ -130,6 +131,7 @@ NUM_EPOCHS_PER_DOMAIN = {
     'ball_in_cup': int(2e4),
     'cheetah': int(2e4),
     'finger': int(2e4),
+    'InvisibleArm': 1000,
 }
 
 ALGORITHM_PARAMS_PER_DOMAIN = {
