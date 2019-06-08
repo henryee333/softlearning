@@ -470,11 +470,17 @@ def get_variant_spec_base(universe, domain, task, policy, algorithm):
     return variant_spec
 
 
-def is_image_env(domain, task, variant_spec):
+IMAGE_ENVS = (
+    ('robosuite', 'InvisibleArm', 'FreeFloatManipulation'),
+)
+
+
+def is_image_env(universe, domain, task, variant_spec):
     return ('image' in task.lower()
             or 'image' in domain.lower()
             or 'pixel_wrapper_kwargs' in (
-                variant_spec['environment_params']['training']['kwargs']))
+                variant_spec['environment_params']['training']['kwargs'])
+            or (universe, domain, task) in IMAGE_ENVS)
 
 
 def get_variant_spec_image(universe,
@@ -487,7 +493,7 @@ def get_variant_spec_image(universe,
     variant_spec = get_variant_spec_base(
         universe, domain, task, policy, algorithm, *args, **kwargs)
 
-    if is_image_env(domain, task, variant_spec):
+    if is_image_env(universe, domain, task, variant_spec):
         preprocessor_params = {
             'type': 'ConvnetPreprocessor',
             'kwargs': {
@@ -499,9 +505,19 @@ def get_variant_spec_image(universe,
             },
         }
 
+        if universe == 'robosuite':
+            pixels_key = 'image'
+        else:
+            pixels_key = (variant_spec
+                          ['environment_params']
+                          ['training']
+                          ['kwargs']
+                          ['pixel_wrapper_kwargs']
+                          ['observation_key'])
+
         variant_spec['policy_params']['kwargs']['hidden_layer_sizes'] = (M, M)
         variant_spec['policy_params']['kwargs']['observation_preprocessors_params'] = {
-            'pixels': deepcopy(preprocessor_params)
+            pixels_key: deepcopy(preprocessor_params)
         }
 
         # for key in ('hidden_layer_sizes', 'observation_preprocessors_params'):
