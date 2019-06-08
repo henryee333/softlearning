@@ -347,7 +347,32 @@ ENVIRONMENT_PARAMS = {
             },
         },
     },
+    'InvisibleArm': {
+        'FreeFloatManipulation': {
+            'has_renderer': False,
+            'has_offscreen_renderer': True,
+            'use_camera_obs': True,
+            'camera_name': 'agentview',
+            # ('frontview', 'birdview', 'agentview')
+            'camera_width': 64,
+            'camera_height': 64,
 
+            'fixed_arm': True,
+            'target_x_range': (0.0, 0.0),
+            'target_y_range': (0.0, 0.0),
+            'target_z_rotation_range': (np.pi, np.pi),
+            'observation_keys': (
+                'image',
+
+                'joint_pos',
+                'joint_vel',
+                'eef_pos',
+                'eef_quat',
+                'gripper_qpos',
+                'gripper_qvel',
+            ),
+        }
+    }
 }
 
 NUM_CHECKPOINTS = 10
