@@ -22,7 +22,7 @@ class Pusher2dEnv(Serializable, MujocoEnv):
     overwritten.
     """
     MODEL_PATH = osp.abspath(
-        osp.join(PROJECT_PATH, 'models', 'pusher_2d.xml'))
+        osp.join(PROJECT_PATH, 'models', 'pusher_2d_walls.xml'))
 
     JOINT_INDS = list(range(0, 3))
     PUCK_INDS = list(range(3, 5))
@@ -70,11 +70,11 @@ class Pusher2dEnv(Serializable, MujocoEnv):
         self._swap_goal_upon_completion = swap_goal_upon_completion
 
         if self._num_goals > 0:
-            self._goals = np.random.uniform(
+            self._goals = list(np.random.uniform(
                 low=(goal_x_range[0], goal_y_range[0]),
                 high=(goal_x_range[1], goal_y_range[1]),
-                size=num_goals
-            )
+                size=(num_goals, 2)
+            ))
 
             if self._swap_goal_upon_completion:
                 self._current_goal_index = 0
@@ -177,7 +177,7 @@ class Pusher2dEnv(Serializable, MujocoEnv):
 
             # qpos[self.JOINT_INDS] = np.random.uniform(
             #     low=ctrl_range[:, 0], high=ctrl_range[:, 1])
-            qpos[self.JOINT_INDS] = 0
+            qpos[self.JOINT_INDS] = self.init_qpos.squeeze()[self.JOINT_INDS]
 
             # qpos = np.random.uniform(
             #     low=-np.pi, high=np.pi, size=self.model.nq
@@ -196,7 +196,9 @@ class Pusher2dEnv(Serializable, MujocoEnv):
             qvel[self.PUCK_INDS] = 0
             qvel[self.TARGET_INDS] = 0
 
-        if self._num_goals > 0:
+        if self._num_goals == 1:
+            qpos[self.TARGET_INDS] = self._goals[0]
+        elif self._num_goals > 1:
             if self._swap_goal_upon_completion:
                 puck_position = self.get_body_com("object")[:2]
                 goal_position = self.get_body_com("goal")[:2]
@@ -205,10 +207,9 @@ class Pusher2dEnv(Serializable, MujocoEnv):
                                           if i != self._current_goal_index]
                     self._current_goal_index = np.random.choice(
                         other_goal_indices)
-
-                qpos[self.TARGET_INDS] = self._goals[self._current_goal_index]
             else:
-                qpos[self.TARGET_INDS] = np.random.choice(self._goals)
+                self._current_goal_index = np.random.randint(self._num_goals)
+            qpos[self.TARGET_INDS] = self._goals[self._current_goal_index]
         else:
             qpos[self.TARGET_INDS] = np.random.uniform(
                 low=(self._goal_x_range[0],
