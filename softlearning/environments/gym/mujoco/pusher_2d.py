@@ -197,25 +197,12 @@ class Pusher2dEnv(Serializable, MujocoEnv):
         if self._reset_mode == "free":
             qpos = self._last_qpos
             qvel = self.init_qvel.copy().squeeze()
-        elif self._reset_mode == "random":
-            qpos = np.zeros(self.model.nq)
-            # ctrl_range = self.sim.model.actuator_ctrlrange
-
-            # qpos[self.JOINT_INDS] = np.random.uniform(
-            #     low=ctrl_range[:, 0], high=ctrl_range[:, 1])
+        elif self._reset_mode == "random": # random puck pos + random arm angles
+            qpos = self.init_qpos
             qpos[self.QPOS_JOINT_INDS] = np.random.uniform(
                 low=(-np.pi, -np.pi*3/4, -np.pi/2),
                 high=(np.pi, np.pi*3/4, np.pi/2)
             )
-            # qpos[self.JOINT_INDS] = self.init_qpos.squeeze()[self.JOINT_INDS]
-
-            # qpos = np.random.uniform(
-            #     low=-np.pi, high=np.pi, size=self.model.nq
-            # ) + self.init_qpos.squeeze()
-            # qpos[self.TARGET_INDS] = self.init_qpos.squeeze()[self.TARGET_INDS]
-
-            # puck_position = np.random.uniform(
-            #     low=[0.3, -1.0], high=[1.0, -0.4]),
             qpos[self.QPOS_PUCK_INDS] = np.random.uniform(
                 low=(self._puck_initial_x_range[0],
                      self._puck_initial_y_range[0]),
@@ -225,9 +212,9 @@ class Pusher2dEnv(Serializable, MujocoEnv):
             qvel = self.init_qvel.copy().squeeze()
             qvel[self.QPOS_PUCK_INDS] = 0
             qvel[self.QPOS_GOAL_INDS] = 0
-        elif self._reset_mode == "random_puck":
+        elif self._reset_mode == "random_puck": # just randomize puck pos
             qpos = self.init_qpos
-            qpos[self.JOINT_INDS] = self.init_qpos.squeeze()[self.JOINT_INDS]
+            qpos[self.QPOS_JOINT_INDS] = self.init_qpos.squeeze()[self.QPOS_JOINT_INDS]
 
             qpos[self.QPOS_PUCK_INDS] = np.random.uniform(
                 low=(self._puck_initial_x_range[0],
