@@ -1,5 +1,8 @@
 import os.path as osp
-
+import os
+import glob
+import pickle
+import gzip
 import numpy as np
 from gym.envs.mujoco.mujoco_env import MujocoEnv
 
@@ -22,19 +25,25 @@ class Pusher2dEnv(Serializable, MujocoEnv):
     overwritten.
     """
     MODEL_PATH = osp.abspath(
-        osp.join(PROJECT_PATH, 'models', 'pusher_2d_walls.xml'))
+        osp.join(PROJECT_PATH, 'models', 'pusher_2d.xml'))
 
-    JOINT_INDS = list(range(0, 3))
-    PUCK_INDS = list(range(3, 5))
-    TARGET_INDS = list(range(5, 7))
+    QPOS_JOINT_INDS = list(range(0, 3))
+    QPOS_PUCK_INDS = list(range(3, 5))
+    QPOS_GOAL_INDS = list(range(5, 7))
+    OBS_JOINT_SIN_INDS = list(range(0, 3))
+    OBS_JOINT_COS_INDS = list(range(3, 6))
+    OBS_JOINT_VEL_INDS = list(range(6, 9))
+    OBS_EEF_INDS = list(range(9, 11))
+    OBS_PUCK_INDS = list(range(11, 13))
+    OBS_GOAL_INDS = list(range(13, 15))
 
     # TODO.before_release Fix target visualization (right now the target is
     # always drawn in (-1, 0), regardless of the actual goal.
 
     def __init__(self,
                  goal=(0, -1),
-                 eef_to_object_distance_cost_coeff=0,
-                 goal_to_object_distance_cost_coeff=1.0,
+                 eef_to_puck_distance_cost_coeff=0,
+                 goal_to_puck_distance_cost_coeff=1.0,
                  ctrl_cost_coeff=0.1,
                  puck_initial_x_range=(0, 1),
                  puck_initial_y_range=(-1, -0.5),
@@ -42,7 +51,9 @@ class Pusher2dEnv(Serializable, MujocoEnv):
                  goal_y_range=(-1, 1),
                  num_goals=-1,
                  swap_goal_upon_completion=True,
-                 reset_free=True):
+                 reset_mode="random",
+                 initial_distribution_path="",
+    ):
         """
         goal (`list`): List of two elements denoting the x and y coordinates of
             the goal location. Either of the coordinate can also be a string
@@ -58,8 +69,8 @@ class Pusher2dEnv(Serializable, MujocoEnv):
         # self._goal_mask = [coordinate != 'any' for coordinate in goal]
         # self._goal = np.array(goal)[self._goal_mask].astype(np.float32)
 
-        self._eef_to_object_distance_cost_coeff = eef_to_object_distance_cost_coeff
-        self._goal_to_object_distance_cost_coeff = goal_to_object_distance_cost_coeff
+        self._eef_to_puck_distance_cost_coeff = eef_to_puck_distance_cost_coeff
+        self._goal_to_puck_distance_cost_coeff = goal_to_puck_distance_cost_coeff
         self._ctrl_cost_coeff = ctrl_cost_coeff
 
         self._puck_initial_x_range = puck_initial_x_range
@@ -69,52 +80,69 @@ class Pusher2dEnv(Serializable, MujocoEnv):
         self._num_goals = num_goals
         self._swap_goal_upon_completion = swap_goal_upon_completion
 
+        # For multigoal setting, sample goals
         if self._num_goals > 0:
             self._goals = list(np.random.uniform(
                 low=(goal_x_range[0], goal_y_range[0]),
                 high=(goal_x_range[1], goal_y_range[1]),
                 size=(num_goals, 2)
             ))
-
             if self._swap_goal_upon_completion:
                 self._current_goal_index = 0
         else:
             self._swap_goal_upon_completion = False
 
-        self._reset_free = reset_free
-        # self._last_qpos = np.zeros(self.model.nq)
+        self._reset_mode = reset_mode
+        if self._reset_mode == "distribution":
+            self._init_states = self._get_init_pool(initial_distribution_path)
 
         MujocoEnv.__init__(self, model_path=self.MODEL_PATH, frame_skip=5)
-
         self.model.stat.extent = 10
+
         self._last_qpos = np.concatenate([
-            self.sim.data.qpos.flat[self.JOINT_INDS],
+            self.sim.data.qpos.flat[self.QPOS_JOINT_INDS].copy(),
             [np.mean(puck_initial_x_range), np.mean(puck_initial_y_range)],
-            self.init_qpos.squeeze()[self.TARGET_INDS],
+            self.init_qpos.squeeze()[self.QPOS_GOAL_INDS],
         ])
 
-    # def _pre_action(self, action):
-    #     """Action preprocessor."""
-    #     action = np.clip(action, -1, 1)
-    #     ctrl_range = self.sim.model.actuator_ctrlrange
-    #     bias = 0.5 * (ctrl_range[:, 1] + ctrl_range[:, 0])
-    #     weight = 0.5 * (ctrl_range[:, 1] - ctrl_range[:, 0])
-    #     applied_action = bias + weight * action
-    #     return applied_action
+    def replay_pool_pickle_path(self, checkpoint_dir):
+        return os.path.join(checkpoint_dir, 'replay_pool.pkl')
+
+    def _get_init_pool(self, initial_distribution_path):
+        experiment_root = os.path.dirname(initial_distribution_path)
+
+        experience_paths = [
+            self.replay_pool_pickle_path(checkpoint_dir)
+            for checkpoint_dir in sorted(glob.iglob(
+                    os.path.join(experiment_root, 'checkpoint_*')))
+        ]
+
+        init_states = []
+        for experience_path in experience_paths:
+            with gzip.open(experience_path, 'rb') as f:
+                pool = pickle.load(f)
+            init_indices = pool['episode_index_forwards'].reshape(-1) == 0
+            init_states.append(pool['observations']['observations'][init_indices])
+
+        return np.concatenate(init_states)
+
+    def _pre_action(self, action):
+        """Convert to relative position control."""
+        joint_pos = self.sim.data.qpos.flat[self.QPOS_JOINT_INDS]
+        next_pos = action + joint_pos
+        return next_pos
 
     def step(self, action):
-        # action = self._pre_action(action)
+        action = self._pre_action(action)
         reward, info = self.compute_reward(self._get_obs(), action)
-
         self.do_simulation(action, self.frame_skip)
         observation = self._get_obs()
         done = False
 
-        self._last_qpos = np.concatenate([
-            self.sim.data.qpos.flat[self.JOINT_INDS],
-            self.get_body_com("object")[:2],
-            self.init_qpos.squeeze()[self.TARGET_INDS],
-        ])
+        self._last_qpos = self.init_qpos
+        self._last_qpos[self.QPOS_JOINT_INDS] = self.sim.data.qpos.flat[
+            self.QPOS_JOINT_INDS]
+        self._last_qpos[self.QPOS_PUCK_INDS] = self.get_body_com("puck")[:2]
 
         return observation, reward, done, info
 
@@ -125,34 +153,33 @@ class Pusher2dEnv(Serializable, MujocoEnv):
             actions = actions[None]
             is_batch = False
 
-        eef_pos = observations[:, 9:11]
-        obj_pos = observations[:, 11:13]
-        goal_pos = observations[:, 13:]
-        # obj_pos_masked = obj_pos[:, self._goal_mask]
+        eef_pos = observations[:, self.OBS_EEF_INDS]
+        puck_pos = observations[:, self.OBS_PUCK_INDS]
+        goal_pos = observations[:, self.OBS_GOAL_INDS]
 
-        # goal_object_distances = np.linalg.norm(
-        #     self._goal[None] - obj_pos_masked, axis=1)
-        goal_to_object_distances = np.linalg.norm(
-            goal_pos - obj_pos, ord=2, axis=1)
+        goal_to_puck_distances = np.linalg.norm(
+            goal_pos - puck_pos, ord=2, axis=1)
 
-        eef_to_object_distances = np.linalg.norm(
-            eef_pos - obj_pos, ord=2, axis=1)
+        eef_to_puck_distances = np.linalg.norm(
+            eef_pos - puck_pos, ord=2, axis=1)
 
         ctrl_costs = np.sum(actions**2, axis=1)
 
         rewards = - (
-            + self._eef_to_object_distance_cost_coeff * eef_to_object_distances
-            + self._goal_to_object_distance_cost_coeff * goal_to_object_distances
+            + self._eef_to_puck_distance_cost_coeff * eef_to_puck_distances
+            + self._goal_to_puck_distance_cost_coeff * goal_to_puck_distances
             + self._ctrl_cost_coeff * ctrl_costs)
 
         if not is_batch:
             rewards = rewards.squeeze()
-            eef_to_object_distances = eef_to_object_distances.squeeze()
-            goal_to_object_distances = goal_to_object_distances.squeeze()
+            eef_to_puck_distances = eef_to_puck_distances.squeeze()
+            goal_to_puck_distances = goal_to_puck_distances.squeeze()
 
+        # print("eef_pos: ", eef_pos)
+        # print("puck_pos: ", obj_pos)
         return rewards, {
-            'eef_to_object_distance': eef_to_object_distances,
-            'goal_to_object_distance': goal_to_object_distances
+            'eef_to_puck_distance': eef_to_puck_distances,
+            'goal_to_puck_distance': goal_to_puck_distances
         }
 
     def viewer_setup(self):
@@ -166,18 +193,21 @@ class Pusher2dEnv(Serializable, MujocoEnv):
         # self.viewer.cam.azimuth = cam_pos[5]
         self.viewer.cam.trackbodyid = -1
 
-
     def reset_model(self):
-        if self._reset_free:
+        if self._reset_mode == "free":
             qpos = self._last_qpos
             qvel = self.init_qvel.copy().squeeze()
-        else:
+        elif self._reset_mode == "random":
             qpos = np.zeros(self.model.nq)
-            ctrl_range = self.sim.model.actuator_ctrlrange
+            # ctrl_range = self.sim.model.actuator_ctrlrange
 
             # qpos[self.JOINT_INDS] = np.random.uniform(
             #     low=ctrl_range[:, 0], high=ctrl_range[:, 1])
-            qpos[self.JOINT_INDS] = self.init_qpos.squeeze()[self.JOINT_INDS]
+            qpos[self.QPOS_JOINT_INDS] = np.random.uniform(
+                low=(-np.pi, -np.pi*3/4, -np.pi/2),
+                high=(np.pi, np.pi*3/4, np.pi/2)
+            )
+            # qpos[self.JOINT_INDS] = self.init_qpos.squeeze()[self.JOINT_INDS]
 
             # qpos = np.random.uniform(
             #     low=-np.pi, high=np.pi, size=self.model.nq
@@ -186,21 +216,49 @@ class Pusher2dEnv(Serializable, MujocoEnv):
 
             # puck_position = np.random.uniform(
             #     low=[0.3, -1.0], high=[1.0, -0.4]),
-            qpos[self.PUCK_INDS] = np.random.uniform(
+            qpos[self.QPOS_PUCK_INDS] = np.random.uniform(
                 low=(self._puck_initial_x_range[0],
                      self._puck_initial_y_range[0]),
                 high=(self._puck_initial_x_range[1],
                       self._puck_initial_y_range[1])
                 )
             qvel = self.init_qvel.copy().squeeze()
-            qvel[self.PUCK_INDS] = 0
-            qvel[self.TARGET_INDS] = 0
+            qvel[self.QPOS_PUCK_INDS] = 0
+            qvel[self.QPOS_GOAL_INDS] = 0
+        elif self._reset_mode == "random_puck":
+            qpos = self.init_qpos
+            qpos[self.JOINT_INDS] = self.init_qpos.squeeze()[self.JOINT_INDS]
+
+            qpos[self.QPOS_PUCK_INDS] = np.random.uniform(
+                low=(self._puck_initial_x_range[0],
+                     self._puck_initial_y_range[0]),
+                high=(self._puck_initial_x_range[1],
+                      self._puck_initial_y_range[1])
+                )
+            qvel = self.init_qvel.copy().squeeze()
+            qvel[self.QPOS_PUCK_INDS] = 0
+            qvel[self.QPOS_GOAL_INDS] = 0
+
+        elif self._reset_mode == "distribution":
+            num_init_states = self._init_states.shape[0]
+            rand_index = np.random.randint(num_init_states)
+            init_state = self._init_states[rand_index]
+
+            qpos = self.init_qpos
+            qpos[self.QPOS_JOINT_INDS] = np.arctan2(
+                init_state[self.OBS_JOINT_SIN_INDS],
+                init_state[self.OBS_JOINT_COS_INDS]
+            )
+            qpos[self.QPOS_PUCK_INDS] = init_state[self.OBS_PUCK_INDS]
+            qvel = self.init_qvel.copy().squeeze()
+        else:
+            raise ValueError("reset mode must be specified correctly")
 
         if self._num_goals == 1:
-            qpos[self.TARGET_INDS] = self._goals[0]
+            qpos[self.QPOS_GOAL_INDS] = self._goals[0]
         elif self._num_goals > 1:
             if self._swap_goal_upon_completion:
-                puck_position = self.get_body_com("object")[:2]
+                puck_position = self.get_body_com("puck")[:2]
                 goal_position = self.get_body_com("goal")[:2]
                 if np.linalg.norm(puck_position - goal_position) < 0.01:
                     other_goal_indices = [i for i in range(self._num_goals)
@@ -209,9 +267,9 @@ class Pusher2dEnv(Serializable, MujocoEnv):
                         other_goal_indices)
             else:
                 self._current_goal_index = np.random.randint(self._num_goals)
-            qpos[self.TARGET_INDS] = self._goals[self._current_goal_index]
+            qpos[self.QPOS_GOAL_INDS] = self._goals[self._current_goal_index]
         else:
-            qpos[self.TARGET_INDS] = np.random.uniform(
+            qpos[self.QPOS_GOAL_INDS] = np.random.uniform(
                 low=(self._goal_x_range[0],
                      self._goal_y_range[0]),
                 high=(self._goal_x_range[1],
@@ -229,11 +287,12 @@ class Pusher2dEnv(Serializable, MujocoEnv):
 
     def _get_obs(self):
         return np.concatenate([
-            np.sin(self.sim.data.qpos.flat[self.JOINT_INDS]),
-            np.cos(self.sim.data.qpos.flat[self.JOINT_INDS]),
-            self.sim.data.qvel.flat[self.JOINT_INDS],
+            np.sin(self.sim.data.qpos.flat[self.QPOS_JOINT_INDS]),
+            np.cos(self.sim.data.qpos.flat[self.QPOS_JOINT_INDS]),
+            # np.unwrap(self.sim.data.qpos.flat[self.JOINT_INDS]),
+            self.sim.data.qvel.flat[self.QPOS_JOINT_INDS],
             self.get_body_com("distal_4")[:2],
-            self.get_body_com("object")[:2],
+            self.get_body_com("puck")[:2],
             self.get_body_com("goal")[:2],
         ]).reshape(-1)
 

@@ -54,10 +54,14 @@ def simulate_policy(args):
         variant['environment_params']['evaluation']
         if 'evaluation' in variant['environment_params']
         else variant['environment_params']['training'])
+    if args.render_mode == 'human':
+        if 'has_renderer' in environment_params['kwargs'].keys():
+            environment_params['kwargs']['has_renderer'] = True
+
     evaluation_environment = get_environment_from_params(environment_params)
 
     policy = (
-        get_policy_from_variant(variant, evaluation_environment, Qs=[None]))
+        get_policy_from_variant(variant, evaluation_environment))
     policy.set_weights(picklable['policy_weights'])
 
     with policy.set_deterministic(args.deterministic):
@@ -65,7 +69,7 @@ def simulate_policy(args):
                          evaluation_environment,
                          policy,
                          path_length=args.max_path_length,
-                         render_mode=args.render_mode)
+                         render_kwargs={"mode": args.render_mode})
 
     if args.render_mode == 'rgb_array':
         for i, path in enumerate(paths):
