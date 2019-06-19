@@ -66,9 +66,6 @@ class Pusher2dEnv(Serializable, MujocoEnv):
         """
         self._Serializable__initialize(locals())
 
-        # self._goal_mask = [coordinate != 'any' for coordinate in goal]
-        # self._goal = np.array(goal)[self._goal_mask].astype(np.float32)
-
         self._eef_to_puck_distance_cost_coeff = eef_to_puck_distance_cost_coeff
         self._goal_to_puck_distance_cost_coeff = goal_to_puck_distance_cost_coeff
         self._ctrl_cost_coeff = ctrl_cost_coeff
@@ -214,8 +211,6 @@ class Pusher2dEnv(Serializable, MujocoEnv):
             qvel[self.QPOS_GOAL_INDS] = 0
         elif self._reset_mode == "random_puck": # just randomize puck pos
             qpos = self.init_qpos.copy()
-            print(qpos)
-            qpos[self.QPOS_JOINT_INDS] = self.init_qpos.squeeze()[self.QPOS_JOINT_INDS]
 
             qpos[self.QPOS_PUCK_INDS] = np.random.uniform(
                 low=(self._puck_initial_x_range[0],
