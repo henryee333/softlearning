@@ -16,9 +16,7 @@ GAUSSIAN_POLICY_PARAMS_BASE = {
         'hidden_layer_sizes': (M, M),
         'squash': True,
         'observation_keys': None,
-        'observation_preprocessors_params': {
-            'observations': None,
-        }
+        'observation_preprocessors_params': {}
     }
 }
 
@@ -428,9 +426,7 @@ def get_variant_spec_base(universe, domain, task, policy, algorithm):
             'kwargs': {
                 'hidden_layer_sizes': (M, M),
                 'observation_keys': None,
-                'observation_preprocessors_params': {
-                    'observations': None,
-                }
+                'observation_preprocessors_params': {}
             }
         },
         'algorithm_params': algorithm_params,
@@ -497,48 +493,41 @@ def get_variant_spec_image(universe,
     variant_spec = get_variant_spec_base(
         universe, domain, task, policy, algorithm, *args, **kwargs)
 
-    if is_image_env(universe, domain, task, variant_spec):
-        preprocessor_params = tune.grid_search([
-            {
-                'type': 'ConvnetPreprocessor',
-                'kwargs': {
-                    'conv_filters': (64, ) * num_layers,
-                    'conv_kernel_sizes': (3, ) * num_layers,
-                    'conv_strides': (2, ) * num_layers,
-                    'normalization_type': normalization_type,
-                    'downsampling_type': 'conv',
-                },
-            }
-            for num_layers in (3, 4)
-            for normalization_type in (None, 'layer')
-        ])
-
-        if universe == 'robosuite':
-            pixels_key = 'image'
-        else:
-            pixels_key = (variant_spec
-                          ['environment_params']
-                          ['training']
-                          ['kwargs']
-                          ['pixel_wrapper_kwargs']
-                          ['observation_key'])
-
-        variant_spec['policy_params']['kwargs']['hidden_layer_sizes'] = (M, M)
-        variant_spec['policy_params']['kwargs']['observation_preprocessors_params'] = {
-            pixels_key: deepcopy(preprocessor_params)
+    if is_image_env(domain, task, variant_spec):
+        preprocessor_params = {
+            'type': 'convnet_preprocessor',
+            'kwargs': {
+                'conv_filters': (64, ) * 3,
+                'conv_kernel_sizes': (3, ) * 3,
+                'conv_strides': (2, ) * 3,
+                'normalization_type': 'layer',
+                'downsampling_type': 'conv',
+            },
         }
 
-        # for key in ('hidden_layer_sizes', 'observation_preprocessors_params'):
+        variant_spec['policy_params']['kwargs']['hidden_layer_sizes'] = (M, M)
+        variant_spec['policy_params']['kwargs'][
+            'observation_preprocessors_params'] = {
+                'pixels': deepcopy(preprocessor_params)
+            }
+
         variant_spec['Q_params']['kwargs']['hidden_layer_sizes'] = (
             tune.sample_from(lambda spec: (deepcopy(
-                spec.get('config', spec)['policy_params']['kwargs']['hidden_layer_sizes']
+                spec.get('config', spec)
+                ['policy_params']
+                ['kwargs']
+                ['hidden_layer_sizes']
             )))
         )
-        variant_spec['Q_params']['kwargs']['observation_preprocessors_params'] = (
-            tune.sample_from(lambda spec: (deepcopy(
-                spec.get('config', spec)['policy_params']['kwargs']['observation_preprocessors_params']
-            )))
-        )
+        variant_spec['Q_params']['kwargs'][
+            'observation_preprocessors_params'] = (
+                tune.sample_from(lambda spec: (deepcopy(
+                    spec.get('config', spec)
+                    ['policy_params']
+                    ['kwargs']
+                    ['observation_preprocessors_params']
+                )))
+            )
 
     return variant_spec
 
