@@ -3,9 +3,11 @@ from gym.spaces import Dict
 from .flexible_replay_pool import FlexibleReplayPool, Field
 
 
-class SimpleReplayPool(FlexibleReplayPool):
+class GoalReplayPool(FlexibleReplayPool):
     def __init__(self,
                  environment,
+                 observation_fields=None,
+                 new_observation_fields=None,
                  *args,
                  extra_fields=None,
                  **kwargs):
@@ -26,6 +28,7 @@ class SimpleReplayPool(FlexibleReplayPool):
                     shape=observation_space.shape)
                 for name, observation_space
                 in observation_space.spaces.items()
+                if name in environment.observation_keys
             },
             'next_observations': {
                 name: Field(
@@ -34,6 +37,16 @@ class SimpleReplayPool(FlexibleReplayPool):
                     shape=observation_space.shape)
                 for name, observation_space
                 in observation_space.spaces.items()
+                if name in environment.observation_keys
+            },
+            'goals': {
+                name: Field(
+                    name=name,
+                    dtype=observation_space.dtype,
+                    shape=observation_space.shape)
+                for name, observation_space
+                in observation_space.spaces.items()
+                if name in environment.goal_keys
             },
             'actions': Field(
                 name='actions',
@@ -51,5 +64,30 @@ class SimpleReplayPool(FlexibleReplayPool):
             **extra_fields
         }
 
-        super(SimpleReplayPool, self).__init__(
-            *args, fields=fields, **kwargs)
+        super(GoalReplayPool, self).__init__(*args, fields=fields, **kwargs)
+
+    def add_samples(self, samples, *args, **kwargs):
+        observations = type(samples['observations'])(
+            (key, values)
+            for key, values in samples['observations'].items()
+            if key in self._environment.observation_keys
+        )
+        next_observations = type(samples['next_observations'])(
+            (key, values)
+            for key, values in samples['next_observations'].items()
+            if key in self._environment.observation_keys
+        )
+        goals = type(samples['observations'])(
+            (key, values)
+            for key, values in samples['observations'].items()
+            if key in self._environment.goal_keys
+        )
+
+        samples.update({
+            'observations': observations,
+            'next_observations': next_observations,
+            'goals': goals,
+        })
+
+        return super(GoalReplayPool, self).add_samples(
+            samples, *args, **kwargs)

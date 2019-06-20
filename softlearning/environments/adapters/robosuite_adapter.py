@@ -43,14 +43,16 @@ class RobosuiteAdapter(SoftlearningEnv):
                  *args,
                  env=None,
                  normalize=True,
-                 observation_keys=None,
+                 observation_keys=(),
+                 goal_keys=(),
                  **kwargs):
         assert not args, (
             "Robosuite environments don't support args. Use kwargs instead.")
 
         self.normalize = normalize
 
-        super(RobosuiteAdapter, self).__init__(domain, task, *args, **kwargs)
+        super(RobosuiteAdapter, self).__init__(
+            domain, task, *args, goal_keys=goal_keys, **kwargs)
 
         if env is None:
             assert (domain is not None and task is not None), (domain, task)
@@ -89,7 +91,7 @@ class RobosuiteAdapter(SoftlearningEnv):
         self._observation_space = type(observation_space)([
             (name, copy.deepcopy(space))
             for name, space in observation_space.spaces.items()
-            if name in self.observation_keys
+            if name in self.observation_keys + self.goal_keys
         ])
 
         action_space = convert_robosuite_to_gym_action_space(
@@ -127,9 +129,7 @@ class RobosuiteAdapter(SoftlearningEnv):
                depth=None,
                **kwargs):
         if mode == "human":
-            raise NotImplementedError(
-                "TODO(hartikainen): Implement rendering so that"
-                " self._env.viewer.render() works with human mode.")
+            return self._env.render(*args, **kwargs)
         elif mode == "rgb_array":
             if camera_id is not None and camera_name is not None:
                 raise ValueError("Both `camera_id` and `camera_name` cannot be"

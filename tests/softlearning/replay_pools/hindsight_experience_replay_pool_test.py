@@ -13,27 +13,25 @@ from softlearning.environments.utils import get_environment
 
 def create_pool(env, max_size=100, **kwargs):
     return HindsightExperienceReplayPool(
-        observation_space=env.observation_space,
-        action_space=env.action_space,
-        max_size=max_size,
-        **kwargs,
-    )
+        environment=env, max_size=max_size, **kwargs)
 
 
 HER_STRATEGY_TYPES = ['random', 'final', 'episode', 'future']
 HER_RESAMPLING_PROBABILITIES = [0, 0.3, 0.5, 0.8, 1.0]
+REWARD_FUNCTIONS = ()
+TERMINAL_FUNCTIONS = ()
 
 
 class StrategyValidator(object):
-    def __init__(self, her_strategy, resample_fields):
+    def __init__(self, her_strategy):
         self._her_strategy = her_strategy
         self._statistics = defaultdict(list)
 
     @abc.abstractmethod
     def verify_batch(self, batch):
-        where_not_resampled = np.where(~batch['resampled'])
+        where_not_resampled = np.flatnonzero(~batch['resampled'])
         np.testing.assert_equal(
-            batch['goal_resample_distances'][where_not_resampled],
+            batch['resampled_distances'][where_not_resampled],
             float('inf'))
 
         self._statistics['num_resampled'] = batch['resampled']
@@ -63,9 +61,9 @@ class RandomStrategyValidator(StrategyValidator):
 class FinalStrategyValidator(StrategyValidator):
     def verify_batch(self, batch):
         if np.sum(batch['resampled']) > 0:
-            where_resampled = np.where(batch['resampled'])
+            where_resampled = np.flatnonzero(batch['resampled'])
             np.testing.assert_equal(
-                batch['goal_resample_distances'][where_resampled],
+                batch['resampled_distances'][where_resampled],
                 batch['episode_index_backwards'][where_resampled])
         super(FinalStrategyValidator, self).verify_batch(batch)
 
@@ -73,13 +71,13 @@ class FinalStrategyValidator(StrategyValidator):
 class EpisodeStrategyValidator(StrategyValidator):
     def verify_batch(self, batch):
         if np.sum(batch['resampled']) > 0:
-            where_resampled = np.where(batch['resampled'])
+            where_resampled = np.flatnonzero(batch['resampled'])
 
             gt_first_index = (
                 -1 * batch['episode_index_forwards'][where_resampled]
-                <= batch['goal_resample_distances'][where_resampled])
+                <= batch['resampled_distances'][where_resampled])
             lt_final_index = (
-                batch['goal_resample_distances'][where_resampled]
+                batch['resampled_distances'][where_resampled]
                 < batch['episode_index_backwards'][where_resampled])
             within_episode = np.logical_and(
                 gt_first_index, lt_final_index)
@@ -90,26 +88,28 @@ class EpisodeStrategyValidator(StrategyValidator):
 class FutureStrategyValidator(StrategyValidator):
     def verify_batch(self, batch):
         if np.sum(batch['resampled']) > 0:
-            where_resampled = np.where(batch['resampled'])
-            assert np.all(batch['goal_resample_distances'][where_resampled] >= 0)
+            where_resampled = np.flatnonzero(batch['resampled'])
+            assert np.all(batch['resampled_distances'][where_resampled] >= 0)
             assert np.all(
-                batch['goal_resample_distances'][where_resampled]
+                batch['resampled_distances'][where_resampled]
                 <= batch['episode_index_backwards'][where_resampled])
         super(FutureStrategyValidator, self).verify_batch(batch)
 
 
-class TestHindsightExperienceReplayPoolTest:
+class TestHindsightExperienceReplayPool():
     @pytest.mark.parametrize("strategy_type", HER_STRATEGY_TYPES)
     @pytest.mark.parametrize("resampling_probability",
                              HER_RESAMPLING_PROBABILITIES)
     def test_resampling(self, strategy_type, resampling_probability):
-        env = get_environment('gym', 'HandReach', 'v0', {})
+        env = get_environment('gym', 'HandReach', 'v0', {
+            'observation_keys': ('observation', ),
+            'goal_keys': ('desired_goal', ),
+        })
         assert isinstance(env.observation_space, gym.spaces.Dict)
 
         max_size = 1000
         episode_length = 50
 
-        resample_fields = (('observations', 'desired_goal', ), )
         her_strategy = {
             'type': strategy_type,
             'resampling_probability': resampling_probability,
@@ -118,7 +118,6 @@ class TestHindsightExperienceReplayPoolTest:
         pool = create_pool(
             env=env,
             max_size=max_size,
-            resample_fields=resample_fields,
             her_strategy=her_strategy,
         )
 
@@ -127,10 +126,7 @@ class TestHindsightExperienceReplayPoolTest:
             'final': FinalStrategyValidator,
             'episode': EpisodeStrategyValidator,
             'future': FutureStrategyValidator,
-        }[strategy_type](
-            her_strategy=her_strategy,
-            resample_fields=resample_fields,
-        )
+        }[strategy_type](her_strategy=her_strategy)
 
         episode_lengths = []
         while pool.size < pool._max_size:
@@ -172,6 +168,14 @@ class TestHindsightExperienceReplayPoolTest:
             strategy_validator.verify_batch(random_batch)
 
         assert strategy_validator.statistics_match()
+
+    @pytest.mark.parametrize("reward_function", REWARD_FUNCTIONS)
+    def test_custom_reward_function(self, reward_function):
+        return
+
+    @pytest.mark.parametrize("terminal_function", TERMINAL_FUNCTIONS)
+    def test_custom_terminal_function(self, terminal_function):
+        return
 
 
 if __name__ == '__main__':

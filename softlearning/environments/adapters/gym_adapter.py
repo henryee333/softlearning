@@ -53,7 +53,8 @@ class GymAdapter(SoftlearningEnv):
                  *args,
                  env=None,
                  normalize=True,
-                 observation_keys=None,
+                 observation_keys=(),
+                 goal_keys=(),
                  unwrap_time_limit=True,
                  pixel_wrapper_kwargs=None,
                  **kwargs):
@@ -63,12 +64,17 @@ class GymAdapter(SoftlearningEnv):
         self.normalize = normalize
         self.unwrap_time_limit = unwrap_time_limit
 
-        super(GymAdapter, self).__init__(domain, task, *args, **kwargs)
+        super(GymAdapter, self).__init__(
+            domain, task, *args, goal_keys=goal_keys, **kwargs)
 
         if env is None:
             assert (domain is not None and task is not None), (domain, task)
-            env_id = f"{domain}-{task}"
-            env = gym.envs.make(env_id, **kwargs)
+            try:
+                env_id = f"{domain}-{task}"
+                env = gym.envs.make(env_id, **kwargs)
+            except gym.error.UnregisteredEnv:
+                env_id = f"{domain}{task}"
+                env = gym.envs.make(env_id, **kwargs)
             self._env_kwargs = kwargs
         else:
             assert not kwargs
@@ -102,7 +108,7 @@ class GymAdapter(SoftlearningEnv):
         self._observation_space = type(dict_observation_space)([
             (name, copy.deepcopy(space))
             for name, space in dict_observation_space.spaces.items()
-            if name in self.observation_keys
+            if name in self.observation_keys + self.goal_keys
         ])
 
         if len(self._env.action_space.shape) > 1:

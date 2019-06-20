@@ -3,12 +3,17 @@ from copy import deepcopy
 from ray import tune
 import numpy as np
 
+from sac_envs.envs.dclaw.dclaw3_screw_v2 import LinearLossFn, NegativeLogLossFn
 from softlearning.misc.utils import get_git_rev, deep_update
+
+
+DEFAULT_KEY = "__DEFAULT_KEY__"
 
 M = 256
 REPARAMETERIZE = True
 
 NUM_COUPLING_LAYERS = 2
+
 
 GAUSSIAN_POLICY_PARAMS_BASE = {
     'type': 'GaussianPolicy',
@@ -16,38 +21,8 @@ GAUSSIAN_POLICY_PARAMS_BASE = {
         'hidden_layer_sizes': (M, M),
         'squash': True,
         'observation_keys': None,
-        'observation_preprocessors_params': {
-            'observations': None,
-        }
+        'observation_preprocessors_params': {}
     }
-}
-
-GAUSSIAN_POLICY_PARAMS_FOR_DOMAIN = {}
-
-POLICY_PARAMS_BASE = {
-    'GaussianPolicy': GAUSSIAN_POLICY_PARAMS_BASE,
-}
-
-POLICY_PARAMS_BASE.update({
-    'gaussian': POLICY_PARAMS_BASE['GaussianPolicy'],
-})
-
-POLICY_PARAMS_FOR_DOMAIN = {
-    'GaussianPolicy': GAUSSIAN_POLICY_PARAMS_FOR_DOMAIN,
-}
-
-POLICY_PARAMS_FOR_DOMAIN.update({
-    'gaussian': POLICY_PARAMS_FOR_DOMAIN['GaussianPolicy'],
-})
-
-DEFAULT_MAX_PATH_LENGTH = 1000
-MAX_PATH_LENGTH_PER_DOMAIN = {
-    'Point2DEnv': 50,
-    'DClaw3': 250,
-    'HardwareDClaw3': 100,
-    'Pendulum': 200,
-    'Pusher2d': 200,
-    'InvisibleArm': 250,
 }
 
 ALGORITHM_PARAMS_BASE = {
@@ -108,261 +83,192 @@ ALGORITHM_PARAMS_ADDITIONAL = {
     }
 }
 
-DEFAULT_NUM_EPOCHS = 200
 
-NUM_EPOCHS_PER_DOMAIN = {
-    'Swimmer': int(3e2),
-    'Hopper': int(1e3),
-    'HalfCheetah': int(3e3),
-    'Walker2d': int(3e3),
-    'Ant': int(3e3),
-    'Humanoid': int(1e4),
-    'Pusher2d': int(1e3),
-    'HandManipulatePen': int(1e4),
-    'HandManipulateEgg': int(1e4),
-    'HandManipulateBlock': int(1e4),
-    'HandReach': int(1e4),
-    'Point2DEnv': int(200),
-    'Reacher': int(200),
-    'DClaw3': int(200),
-    'HardwareDClaw3': int(100),
-    'InvisibleArm': int(1e3),
-    'Pendulum': 10,
-    'Sawyer': int(1e4),
-    'ball_in_cup': int(2e4),
-    'cheetah': int(2e4),
-    'finger': int(2e4),
+MAX_PATH_LENGTH_PER_UNIVERSE_DOMAIN_TASK = {
+    DEFAULT_KEY: 1000,
+    'gym': {
+        DEFAULT_KEY: 1000,
+        'Point2DEnv': {
+            DEFAULT_KEY: 50,
+        },
+        'Pendulum': {
+            DEFAULT_KEY: 200,
+        },
+        'Pusher2d': {
+            DEFAULT_KEY: 100,
+        },
+        'InvisibleArm': {
+            DEFAULT_KEY: 250,
+        },
+        'DClaw3': {
+            DEFAULT_KEY: 250,
+        },
+        'HardwareDClaw3': {
+            DEFAULT_KEY: 250,
+        },
+    },
 }
 
-ALGORITHM_PARAMS_PER_DOMAIN = {
-    **{
-        domain: {
-            'kwargs': {
-                'n_epochs': NUM_EPOCHS_PER_DOMAIN.get(
-                    domain, DEFAULT_NUM_EPOCHS),
-                'n_initial_exploration_steps': tune.sample_from(lambda spec: (
-                    10 * spec.get('config', spec)
-                    ['sampler_params']
-                    ['kwargs']
-                    ['max_path_length']
-                )),
-            }
-        } for domain in NUM_EPOCHS_PER_DOMAIN
+NUM_EPOCHS_PER_UNIVERSE_DOMAIN_TASK = {
+    DEFAULT_KEY: 200,
+    'gym': {
+        DEFAULT_KEY: 200,
+        'Swimmer': {
+            DEFAULT_KEY: int(3e2),
+        },
+        'Hopper': {
+            DEFAULT_KEY: int(1e3),
+        },
+        'HalfCheetah': {
+            DEFAULT_KEY: int(3e3),
+        },
+        'Walker2d': {
+            DEFAULT_KEY: int(3e3),
+        },
+        'Ant': {
+            DEFAULT_KEY: int(3e3),
+        },
+        'Humanoid': {
+            DEFAULT_KEY: int(1e4),
+        },
+        'Pusher2d': {
+            DEFAULT_KEY: int(2e3),
+        },
+        'HandManipulatePen': {
+            DEFAULT_KEY: int(1e4),
+        },
+        'HandManipulateEgg': {
+            DEFAULT_KEY: int(1e4),
+        },
+        'HandManipulateBlock': {
+            DEFAULT_KEY: int(1e4),
+        },
+        'HandReach': {
+            DEFAULT_KEY: int(1e4),
+        },
+        'Point2DEnv': {
+            DEFAULT_KEY: int(200),
+        },
+        'Reacher': {
+            DEFAULT_KEY: int(200),
+        },
+        'Pendulum': {
+            DEFAULT_KEY: 10,
+        },
+        'DClaw3': {
+            DEFAULT_KEY: 200,
+        },
+        'HardwareDClaw3': {
+            DEFAULT_KEY: 100,
+        },
+    },
+    'dm_control': {
+        DEFAULT_KEY: 200,
+        'ball_in_cup': {
+            DEFAULT_KEY: int(2e4),
+        },
+        'cheetah': {
+            DEFAULT_KEY: int(2e4),
+        },
+        'finger': {
+            DEFAULT_KEY: int(2e4),
+        },
+    },
+    'robosuite': {
+        DEFAULT_KEY: 200,
     }
 }
 
 
-class NegativeLogLossFn(object):
-    def __init__(self, eps, offset=0.0):
-        self._eps = eps
-        self._offset = offset
-
-    def __call__(self, object_target_distance):
-        return - np.log(object_target_distance + self._eps) + self._offset
-
-    def __str__(self):
-        return (
-            f'NegativeLogLossFn(eps={self._eps:e},offset={self._offset:.3f})')
-
-    def __eq__(self, other):
-        if isinstance(other, type(self)):
-            return self._eps == other._eps and self._offset == other._offset
-
-        return super(NegativeLogLossFn, self).__eq__(other)
-
-
-class LinearLossFn(object):
-    def __call__(self, object_target_distance):
-        return -object_target_distance
-
-    def __str__(self):
-        return str(f'LinearLossFn()')
-
-    def __eq__(self, other):
-        if isinstance(other, type(self)):
-            return self._eps == other._eps
-
-        return super(LinearLossFn, self).__eq__(other)
-
-
-ENVIRONMENT_PARAMS = {
-    'Swimmer': {  # 2 DoF
-    },
-    'Hopper': {  # 3 DoF
-    },
-    'HalfCheetah': {  # 6 DoF
-    },
-    'Walker2d': {  # 6 DoF
-    },
-    'Ant': {  # 8 DoF
-        'Parameterizable-v3': {
-            'healthy_reward': 0.0,
-            'healthy_z_range': (-np.inf, np.inf),
-            'exclude_current_positions_from_observation': False,
-        }
-    },
-    'Humanoid': {  # 17 DoF
-        'Parameterizable-v3': {
-            'healthy_reward': 0.0,
-            'healthy_z_range': (-np.inf, np.inf),
-            'exclude_current_positions_from_observation': False,
-        }
-    },
-    'Pusher2d': {  # 3 DoF
-        'Default-v0': {
-            'eef_to_puck_distance_cost_coeff': tune.grid_search([2.0]),
-            'goal_to_puck_distance_cost_coeff': 1.0,
-            'ctrl_cost_coeff': 0.0,
-            'goal': (0, -1),
-            'puck_initial_x_range': (1, 1), #(0, 1),
-            'puck_initial_y_range': (-0.5, -0.5), # (-1, -0.5),
-            'goal_x_range': (-0.5, -0.5), #(-1, 0),
-            'goal_y_range': (-0.5, -0.5), #(-1, 1),
-            'num_goals': 0,
-            'swap_goal_upon_completion': True,
-            'reset_mode': "random_puck",
-            'initial_distribution_path': "/mnt/sda/ray_results/gym/Pusher2d/Default-v0/2019-06-16T14-59-35-reset-free_single_goal_save_pool/ExperimentRunner_2_her_iters=0,n_initial_exploration_steps=2000,n_train_repeat=1,evaluation={'domain': 'Pusher2d', 'task': 'Defaul_2019-06-16_14-59-36umz5wb9o/",
-            # 'pixel_wrapper_kwargs': {
-            #     # 'observation_key': 'pixels',
-            #     # 'pixels_only': True,
-            #     'render_kwargs': {
-            #         'width': 32,
-            #         'height': 32,
-            #         'camera_id': -1,
-            #     },
-            # },
+ENVIRONMENT_PARAMS_PER_UNIVERSE_DOMAIN_TASK = {
+    'gym': {
+        'Swimmer': {  # 2 DoF
         },
-        'DefaultReach-v0': {
-            'arm_goal_distance_cost_coeff': 1.0,
-            'arm_object_distance_cost_coeff': 0.0,
+        'Hopper': {  # 3 DoF
         },
-        'ImageDefault-v0': {
-            'image_shape': (32, 32, 3),
-            'arm_object_distance_cost_coeff': 0.0,
-            'goal_object_distance_cost_coeff': 3.0,
+        'HalfCheetah': {  # 6 DoF
         },
-        'ImageReach-v0': {
-            'image_shape': (32, 32, 3),
-            'arm_goal_distance_cost_coeff': 1.0,
-            'arm_object_distance_cost_coeff': 0.0,
+        'Walker2d': {  # 6 DoF
         },
-        'BlindReach-v0': {
-            'image_shape': (32, 32, 3),
-            'arm_goal_distance_cost_coeff': 1.0,
-            'arm_object_distance_cost_coeff': 0.0,
-        }
-    },
-    'Point2DEnv': {
-        'Default-v0': {
-            'observation_keys': ('observation', 'desired_goal'),
+        'Ant': {  # 8 DoF
+            'Parameterizable-v3': {
+                'healthy_reward': 0.0,
+                'healthy_z_range': (-np.inf, np.inf),
+                'exclude_current_positions_from_observation': False,
+            }
         },
-        'Wall-v0': {
-            'observation_keys': ('observation', 'desired_goal'),
+        'Humanoid': {  # 17 DoF
+            'Parameterizable-v3': {
+                'healthy_reward': 0.0,
+                'healthy_z_range': (-np.inf, np.inf),
+                'exclude_current_positions_from_observation': False,
+            }
         },
-    },
-    'DClaw3': {
-        'ScrewV0-v0': {  # 6 DoF
-            'isHARDARE': False,
+        'Pusher2d': {  # 3 DoF
+            'Default-v0': {
+                'eef_to_puck_distance_cost_coeff': tune.grid_search([2.0]),
+                'goal_to_puck_distance_cost_coeff': 1.0,
+                'ctrl_cost_coeff': 0.0,
+                'puck_initial_x_range': (1, 1), #(0, 1),
+                'puck_initial_y_range': (-0.5, -0.5), # (-1, -0.5),
+                'goal_x_range': (-0.5, -0.5), #(-1, 0),
+                'goal_y_range': (-0.5, -0.5), #(-1, 1),
+                'num_goals': 0,
+                'swap_goal_upon_completion': True,
+                'reset_mode': "random_puck",
+                'initial_distribution_path': "/mnt/sda/ray_results/gym/Pusher2d/Default-v0/2019-06-16T14-59-35-reset-free_single_goal_save_pool/ExperimentRunner_2_her_iters=0,n_initial_exploration_steps=2000,n_train_repeat=1,evaluation={'domain': 'Pusher2d', 'task': 'Defaul_2019-06-16_14-59-36umz5wb9o/",
+            },
+            'DefaultReach-v0': {
+                'arm_goal_distance_cost_coeff': 1.0,
+                'arm_object_distance_cost_coeff': 0.0,
+            },
+            'ImageDefault-v0': {
+                'image_shape': (32, 32, 3),
+                'arm_object_distance_cost_coeff': 0.0,
+                'goal_object_distance_cost_coeff': 3.0,
+            },
+            'ImageReach-v0': {
+                'image_shape': (32, 32, 3),
+                'arm_goal_distance_cost_coeff': 1.0,
+                'arm_object_distance_cost_coeff': 0.0,
+            },
+            'BlindReach-v0': {
+                'image_shape': (32, 32, 3),
+                'arm_goal_distance_cost_coeff': 1.0,
+                'arm_object_distance_cost_coeff': 0.0,
+            }
         },
-        'ScrewV2-v0': {
-            'object_target_distance_reward_fn': NegativeLogLossFn(1e-6),
-            'pose_difference_cost_coeff': 0,
-            'joint_velocity_cost_coeff': 0,
-            'joint_acceleration_cost_coeff': 0,
-            'target_initial_velocity_range': (0, 0),
-            'target_initial_position_range': (-np.pi, np.pi),
-            'object_initial_velocity_range': (0, 0),
-            'object_initial_position_range': (-np.pi, np.pi),
-            'reset_free': True,
+        'Point2DEnv': {
+            'Default-v0': {
+                'observation_keys': ('observation', 'desired_goal'),
+            },
+            'Wall-v0': {
+                'observation_keys': ('observation', 'desired_goal'),
+            },
         },
-        'ImageScrewV2-v0': {
-            'object_target_distance_reward_fn': NegativeLogLossFn(1e-6),
-            'is_hardware': False,
-            'image_shape': (32, 32, 3),
-            'reset_free': False,
-            # 'goal_in_state': True,
-            'pose_difference_cost_coeff': 0,
-            'joint_velocity_cost_coeff': 0,
-            'joint_acceleration_cost_coeff': 0,
-            'target_initial_velocity_range': (0, 0),
-            'target_initial_position_range': (-np.pi, np.pi),
-            'object_initial_velocity_range': (0, 0),
-            'object_initial_position_range': (0, 0),
-            'state_reward': True,
+        'Sawyer': {
+            task_name: {
+                'has_renderer': False,
+                'has_offscreen_renderer': False,
+                'use_camera_obs': False,
+                'reward_shaping': tune.grid_search([True, False]),
+            }
+            for task_name in (
+                    'Lift',
+                    'NutAssembly',
+                    'NutAssemblyRound',
+                    'NutAssemblySingle',
+                    'NutAssemblySquare',
+                    'PickPlace',
+                    'PickPlaceBread',
+                    'PickPlaceCan',
+                    'PickPlaceCereal',
+                    'PickPlaceMilk',
+                    'PickPlaceSingle',
+                    'Stack',
+            )
         },
-        'InfoScrewV2-v0': {
-            # 'object_target_distance_reward_fn': NegativeLogLossFn(1e-6),
-            'is_hardware': False,
-            'image_shape': (32, 32, 3),
-            'reset_free': False,
-            # 'goal_in_state': True,
-            'pose_difference_cost_coeff': 0,
-            'joint_velocity_cost_coeff': 0,
-            'joint_acceleration_cost_coeff': 0,
-            'target_initial_velocity_range': (0, 0),
-            'target_initial_position_range': (np.pi, np.pi),
-            'object_initial_velocity_range': (0, 0),
-            'object_initial_position_range': (0, 0),
-            # 'add_non_encoded_observations': True,
-        }
-    },
-    'HardwareDClaw3': {
-        'ScrewV2-v0': {
-            'object_target_distance_reward_fn': NegativeLogLossFn(0),
-            'pose_difference_cost_coeff': 0,
-            'joint_velocity_cost_coeff': 0,
-            'joint_acceleration_cost_coeff': 0,
-            'target_initial_velocity_range': (0, 0),
-            'target_initial_position_range': (-np.pi, np.pi),
-            'object_initial_velocity_range': (0, 0),
-            'object_initial_position_range': (-np.pi, np.pi),
-            'frame_skip': 30,
-        },
-        'ImageScrewV2-v0': {
-            'image_shape': (32, 32, 3),
-            'object_target_distance_reward_fn': NegativeLogLossFn(0),
-            'pose_difference_cost_coeff': 0,
-            'joint_velocity_cost_coeff': 0,
-            'joint_acceleration_cost_coeff': 0,
-            'target_initial_velocity_range': (0, 0),
-            'target_initial_position_range': (np.pi, np.pi),
-            'object_initial_velocity_range': (0, 0),
-            'object_initial_position_range': (0, 0),
-            'hw_w_sim_imgs': False,
-            'save_eval_paths': True,
-        },
-    },
-    'Point2DEnv': {
-        'Default-v0': {
-            'observation_keys': ('observation', 'desired_goal'),
-        },
-        'Wall-v0': {
-            'observation_keys': ('observation', 'desired_goal'),
-        },
-    },
-    'Sawyer': {
-        task_name: {
-            'has_renderer': False,
-            'has_offscreen_renderer': False,
-            'use_camera_obs': False,
-            'reward_shaping': tune.grid_search([True, False]),
-        }
-        for task_name in (
-                'Lift',
-                'NutAssembly',
-                'NutAssemblyRound',
-                'NutAssemblySingle',
-                'NutAssemblySquare',
-                'PickPlace',
-                'PickPlaceBread',
-                'PickPlaceCan',
-                'PickPlaceCereal',
-                'PickPlaceMilk',
-                'PickPlaceSingle',
-                'Stack',
-        )
-    },
-    'InvisibleArm': {
+        'InvisibleArm': {
         'FreeFloatManipulation': {
             'has_renderer': False,
             'has_offscreen_renderer': True,
@@ -405,50 +311,183 @@ ENVIRONMENT_PARAMS = {
             'initial_y_range': (0, 0),
             'initial_z_rotation_range': (0, 0),
             'num_starts': -1,
-
-        }
+            'camera_width': 64,
+            'camera_height': 64,
+            'render_collision_mesh': True,
+            'render_visual_mesh': False,
+            },
+        },
+        'DClaw3': {
+            'ScrewV2-v0': {
+                'object_target_distance_reward_fn': NegativeLogLossFn(0),
+                'pose_difference_cost_coeff': 0,
+                'joint_velocity_cost_coeff': 0,
+                'joint_acceleration_cost_coeff': 0,
+                'target_initial_velocity_range': (0, 0),
+                'target_initial_position_range': (np.pi, np.pi),
+                'object_initial_velocity_range': (0, 0),
+                'object_initial_position_range': (-np.pi, np.pi),
+            },
+            'ImageScrewV2-v0': {
+                'image_shape': (32, 32, 3),
+                'object_target_distance_reward_fn': NegativeLogLossFn(0),
+                'pose_difference_cost_coeff': 0,
+                'joint_velocity_cost_coeff': 0,
+                'joint_acceleration_cost_coeff': 0,
+                'target_initial_velocity_range': (0, 0),
+                'target_initial_position_range': (np.pi, np.pi),
+                'object_initial_velocity_range': (0, 0),
+                'object_initial_position_range': (-np.pi, np.pi),
+            }
+        },
+        'HardwareDClaw3': {
+            'ScrewV2-v0': {
+                'object_target_distance_reward_fn': NegativeLogLossFn(0),
+                'pose_difference_cost_coeff': 0,
+                'joint_velocity_cost_coeff': 0,
+                'joint_acceleration_cost_coeff': 0,
+                'target_initial_velocity_range': (0, 0),
+                'target_initial_position_range': (np.pi, np.pi),
+                'object_initial_velocity_range': (0, 0),
+                'object_initial_position_range': (-np.pi, np.pi),
+            },
+            'ImageScrewV2-v0': {
+                'image_shape': (32, 32, 3),
+                'object_target_distance_reward_fn': NegativeLogLossFn(0),
+                'pose_difference_cost_coeff': 0,
+                'joint_velocity_cost_coeff': 0,
+                'joint_acceleration_cost_coeff': 0,
+                'target_initial_velocity_range': (0, 0),
+                'target_initial_position_range': (np.pi, np.pi),
+                'object_initial_velocity_range': (0, 0),
+                'object_initial_position_range': (-np.pi, np.pi),
+            },
+        },
+        'DClaw': {
+            'DClawPoseStatic-v0': {},
+            'DClawPoseDynamic-v0': {},
+            'DClawTurnFixed-v0': {},
+            'DClawTurnRandom-v0': {},
+            'DClawTurnRandomDynamics-v0': {},
+            'DClawScrewFixed-v0': {},
+            'DClawScrewRandom-v0': {},
+            'DClawScrewRandomDynamics-v0': {},
+        },
     },
-    'ball_in_cup': {
-        'catch': {
-            'pixel_wrapper_kwargs': {
-                'observation_key': 'pixels',
-                'pixels_only': True,
-                'render_kwargs': {
-                    'width': 84,
-                    'height': 84,
-                    'camera_id': 0,
+    'dm_control': {
+        'ball_in_cup': {
+            'catch': {
+                'pixel_wrapper_kwargs': {
+                    'observation_key': 'pixels',
+                    'pixels_only': True,
+                    'render_kwargs': {
+                        'width': 84,
+                        'height': 84,
+                        'camera_id': 0,
+                    },
+                },
+            },
+        },
+        'cheetah': {
+            'run': {
+                'pixel_wrapper_kwargs': {
+                    'observation_key': 'pixels',
+                    'pixels_only': True,
+                    'render_kwargs': {
+                        'width': 84,
+                        'height': 84,
+                        'camera_id': 0,
+                    },
+                },
+            },
+        },
+        'finger': {
+            'spin': {
+                'pixel_wrapper_kwargs': {
+                    'observation_key': 'pixels',
+                    'pixels_only': True,
+                    'render_kwargs': {
+                        'width': 84,
+                        'height': 84,
+                        'camera_id': 0,
+                    },
                 },
             },
         },
     },
-    'cheetah': {
-        'run': {
-            'pixel_wrapper_kwargs': {
-                'observation_key': 'pixels',
-                'pixels_only': True,
-                'render_kwargs': {
-                    'width': 84,
-                    'height': 84,
-                    'camera_id': 0,
-                },
-            },
-        },
-    },
-    'finger': {
-        'spin': {
-            'pixel_wrapper_kwargs': {
-                'observation_key': 'pixels',
-                'pixels_only': True,
-                'render_kwargs': {
-                    'width': 84,
-                    'height': 84,
-                    'camera_id': 0,
-                },
-            },
-        },
-    },
-
 }
+
+
+def get_num_epochs(universe, domain, task):
+    level_result = NUM_EPOCHS_PER_UNIVERSE_DOMAIN_TASK.copy()
+    for level_key in (universe, domain, task):
+        if isinstance(level_result, int):
+            return level_result
+
+        level_result = level_result.get(level_key) or level_result[DEFAULT_KEY]
+
+    return level_result
+
+
+def get_max_path_length(universe, domain, task):
+    level_result = MAX_PATH_LENGTH_PER_UNIVERSE_DOMAIN_TASK.copy()
+    for level_key in (universe, domain, task):
+        if isinstance(level_result, int):
+            return level_result
+
+        level_result = level_result.get(level_key) or level_result[DEFAULT_KEY]
+
+    return level_result
+
+
+def get_initial_exploration_steps(spec):
+    config = spec.get('config', spec)
+    initial_exploration_steps = 10 * (
+        config
+        ['sampler_params']
+        ['kwargs']
+        ['max_path_length']
+    )
+
+    return initial_exploration_steps
+
+
+def get_checkpoint_frequency(spec):
+    config = spec.get('config', spec)
+    checkpoint_frequency = (
+        config
+        ['algorithm_params']
+        ['kwargs']
+        ['n_epochs']
+    ) // NUM_CHECKPOINTS
+
+    return checkpoint_frequency
+
+
+def get_policy_params(universe, domain, task):
+    policy_params = GAUSSIAN_POLICY_PARAMS_BASE.copy()
+    return policy_params
+
+
+def get_algorithm_params(universe, domain, task):
+    algorithm_params = {
+        'kwargs': {
+            'n_epochs': get_num_epochs(universe, domain, task),
+            'n_initial_exploration_steps': tune.sample_from(
+                get_initial_exploration_steps),
+        }
+    }
+
+    return algorithm_params
+
+
+def get_environment_params(universe, domain, task):
+    environment_params = (
+        ENVIRONMENT_PARAMS_PER_UNIVERSE_DOMAIN_TASK
+        .get(universe, {}).get(domain, {}).get(task, {}))
+
+    return environment_params
+
 
 NUM_CHECKPOINTS = 10
 SAMPLER_PARAMS_PER_DOMAIN = {
@@ -464,14 +503,9 @@ SAMPLER_PARAMS_PER_DOMAIN = {
 def get_variant_spec_base(universe, domain, task, policy, algorithm):
     algorithm_params = deep_update(
         ALGORITHM_PARAMS_BASE,
+        get_algorithm_params(universe, domain, task),
         ALGORITHM_PARAMS_ADDITIONAL.get(algorithm, {}),
-        ALGORITHM_PARAMS_PER_DOMAIN.get(domain, {})
     )
-    if task == 'InfoScrewV2-v0':
-        from softlearning.misc.utils import PROJECT_PATH
-        algorithm_params['kwargs']['goal_classifier_params_direc'] = os.path.join(
-            PROJECT_PATH,
-            'goal_classifier/screw_imgs/train_scope/params.ckpt')
     variant_spec = {
         'git_sha': get_git_rev(__file__),
 
@@ -480,8 +514,7 @@ def get_variant_spec_base(universe, domain, task, policy, algorithm):
                 'domain': domain,
                 'task': task,
                 'universe': universe,
-                'kwargs': (
-                    ENVIRONMENT_PARAMS.get(domain, {}).get(task, {})),
+                'kwargs': get_environment_params(universe, domain, task),
             },
             'evaluation': tune.sample_from(lambda spec: (
                 spec.get('config', spec)
@@ -489,10 +522,7 @@ def get_variant_spec_base(universe, domain, task, policy, algorithm):
                 ['training']
             )),
         },
-        'policy_params': deep_update(
-            POLICY_PARAMS_BASE[policy],
-            POLICY_PARAMS_FOR_DOMAIN[policy].get(domain, {})
-        ),
+        'policy_params': get_policy_params(universe, domain, task),
         'exploration_policy_params': {
             'type': 'UniformPolicy',
             'kwargs': {
@@ -509,33 +539,21 @@ def get_variant_spec_base(universe, domain, task, policy, algorithm):
             'kwargs': {
                 'hidden_layer_sizes': (M, M),
                 'observation_keys': None,
-                'observation_preprocessors_params': {
-                    'observations': None,
-                }
+                'observation_preprocessors_params': {}
             }
         },
         'algorithm_params': algorithm_params,
         'replay_pool_params': {
             'type': 'SimpleReplayPool',
             'kwargs': {
-                'max_size': tune.sample_from(lambda spec: (
-                    {
-                        'SimpleReplayPool': int(5e5),
-                        'TrajectoryReplayPool': int(1e4),
-                    }.get(
-                        spec.get('config', spec)
-                        ['replay_pool_params']
-                        ['type'],
-                        int(1e6))
-                )),
+                'max_size': int(1e6)
             }
         },
         'sampler_params': deep_update({
             'type': 'SimpleSampler',
             'kwargs': {
-                'max_path_length': MAX_PATH_LENGTH_PER_DOMAIN.get(
-                    domain, DEFAULT_MAX_PATH_LENGTH),
-                'min_pool_size': 1000,
+                'max_path_length': get_max_path_length(universe, domain, task),
+                'min_pool_size': get_max_path_length(universe, domain, task),
                 'batch_size': 256,
             }
         }, SAMPLER_PARAMS_PER_DOMAIN.get(domain, {})),
@@ -543,12 +561,8 @@ def get_variant_spec_base(universe, domain, task, policy, algorithm):
             'seed': tune.sample_from(
                 lambda spec: np.random.randint(0, 10000)),
             'checkpoint_at_end': True,
-            'checkpoint_frequency': tune.sample_from(lambda spec: (
-                25000 // (spec.get('config', spec)
-                          ['algorithm_params']
-                          ['kwargs']
-                          ['epoch_length'])
-            )),
+            'checkpoint_frequency': tune.sample_from(get_checkpoint_frequency),
+            'checkpoint_replay_pool': False,
         },
     }
 
@@ -562,11 +576,17 @@ def get_variant_spec_base(universe, domain, task, policy, algorithm):
     return variant_spec
 
 
-def is_image_env(domain, task, variant_spec):
+IMAGE_ENVS = (
+    ('robosuite', 'InvisibleArm', 'FreeFloatManipulation'),
+)
+
+
+def is_image_env(universe, domain, task, variant_spec):
     return ('image' in task.lower()
             or 'image' in domain.lower()
             or 'pixel_wrapper_kwargs' in (
-                variant_spec['environment_params']['training']['kwargs']))
+                variant_spec['environment_params']['training']['kwargs'])
+            or (universe, domain, task) in IMAGE_ENVS)
 
 
 def get_variant_spec_image(universe,
@@ -581,7 +601,7 @@ def get_variant_spec_image(universe,
 
     if is_image_env(domain, task, variant_spec):
         preprocessor_params = {
-            'type': 'convnet_preprocessor',
+            'type': 'ConvnetPreprocessor',
             'kwargs': {
                 'conv_filters': (64, ) * 3,
                 'conv_kernel_sizes': (3, ) * 3,
@@ -592,21 +612,28 @@ def get_variant_spec_image(universe,
         }
 
         variant_spec['policy_params']['kwargs']['hidden_layer_sizes'] = (M, M)
-        variant_spec['policy_params']['kwargs']['observation_preprocessors_params'] = {
-            'pixels': deepcopy(preprocessor_params)
-        }
+        variant_spec['policy_params']['kwargs'][
+            'observation_preprocessors_params'] = {
+                'pixels': deepcopy(preprocessor_params)
+            }
 
-        # for key in ('hidden_layer_sizes', 'observation_preprocessors_params'):
         variant_spec['Q_params']['kwargs']['hidden_layer_sizes'] = (
             tune.sample_from(lambda spec: (deepcopy(
-                spec.get('config', spec)['policy_params']['kwargs']['hidden_layer_sizes']
+                spec.get('config', spec)
+                ['policy_params']
+                ['kwargs']
+                ['hidden_layer_sizes']
             )))
         )
-        variant_spec['Q_params']['kwargs']['observation_preprocessors_params'] = (
-            tune.sample_from(lambda spec: (deepcopy(
-                spec.get('config', spec)['policy_params']['kwargs']['observation_preprocessors_params']
-            )))
-        )
+        variant_spec['Q_params']['kwargs'][
+            'observation_preprocessors_params'] = (
+                tune.sample_from(lambda spec: (deepcopy(
+                    spec.get('config', spec)
+                    ['policy_params']
+                    ['kwargs']
+                    ['observation_preprocessors_params']
+                )))
+            )
 
     return variant_spec
 
