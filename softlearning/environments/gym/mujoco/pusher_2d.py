@@ -53,6 +53,8 @@ class Pusher2dEnv(Serializable, MujocoEnv):
                  swap_goal_upon_completion=True,
                  reset_mode="random",
                  initial_distribution_path="",
+                 goal_mode="random",
+                 goal_sampling_radius_increment=0,
     ):
         """
         goal (`list`): List of two elements denoting the x and y coordinates of
@@ -63,6 +65,10 @@ class Pusher2dEnv(Serializable, MujocoEnv):
             cost.
         goal_distance_coeff ('float'): Coefficient for the object-to-goal
             distance cost.
+        goal_mode ('string'): Scheme for goal sampling.
+            - "random", randomly sample a goal within the goal range
+            - "curriculum-radius", sample a goal from a gradually increasing
+                                   region around the puck
         """
         self._Serializable__initialize(locals())
 
@@ -92,6 +98,11 @@ class Pusher2dEnv(Serializable, MujocoEnv):
         self._reset_mode = reset_mode
         if self._reset_mode == "distribution":
             self._init_states = self._get_init_pool(initial_distribution_path)
+
+        self._goal_mode = goal_mode
+        if self._goal_mode == "curriculum-radius":
+            self.goal_sampling_radius = 0
+            self._goal_sampling_radius_increment = goal_sampling_radius_increment
 
         MujocoEnv.__init__(self, model_path=self.MODEL_PATH, frame_skip=5)
         self.model.stat.extent = 10
@@ -174,10 +185,14 @@ class Pusher2dEnv(Serializable, MujocoEnv):
 
         # print("eef_pos: ", eef_pos)
         # print("puck_pos: ", obj_pos)
-        return rewards, {
+        info =  {
             'eef_to_puck_distance': eef_to_puck_distances,
             'goal_to_puck_distance': goal_to_puck_distances
         }
+
+        if self._goal_mode == "curriculum-radius":
+            info["goal_sampling_radius"] = self.goal_sampling_radius
+        return rewards, info
 
     def viewer_setup(self):
 
@@ -237,28 +252,43 @@ class Pusher2dEnv(Serializable, MujocoEnv):
         else:
             raise ValueError("reset mode must be specified correctly")
 
-        if self._num_goals == 1:
-            qpos[self.QPOS_GOAL_INDS] = self._goals[0]
-        elif self._num_goals > 1:
-            if self._swap_goal_upon_completion:
-                puck_position = self.get_body_com("puck")[:2]
-                goal_position = self.get_body_com("goal")[:2]
-                if np.linalg.norm(puck_position - goal_position) < 0.01:
-                    other_goal_indices = [i for i in range(self._num_goals)
-                                          if i != self._current_goal_index]
-                    self._current_goal_index = np.random.choice(
-                        other_goal_indices)
+        if self._goal_mode == "random":
+            if self._num_goals == 1:
+                qpos[self.QPOS_GOAL_INDS] = self._goals[0]
+            elif self._num_goals > 1:
+                if self._swap_goal_upon_completion:
+                    puck_position = self.get_body_com("puck")[:2]
+                    goal_position = self.get_body_com("goal")[:2]
+                    if np.linalg.norm(puck_position - goal_position) < 0.01:
+                        other_goal_indices = [i for i in range(self._num_goals)
+                                              if i != self._current_goal_index]
+                        self._current_goal_index = np.random.choice(
+                            other_goal_indices)
+                else:
+                    self._current_goal_index = np.random.randint(self._num_goals)
+                    qpos[self.QPOS_GOAL_INDS] = self._goals[self._current_goal_index]
             else:
-                self._current_goal_index = np.random.randint(self._num_goals)
-            qpos[self.QPOS_GOAL_INDS] = self._goals[self._current_goal_index]
-        else:
-            qpos[self.QPOS_GOAL_INDS] = np.random.uniform(
-                low=(self._goal_x_range[0],
-                     self._goal_y_range[0]),
-                high=(self._goal_x_range[1],
-                      self._goal_y_range[1])
+                qpos[self.QPOS_GOAL_INDS] = np.random.uniform(
+                    low=(self._goal_x_range[0],
+                         self._goal_y_range[0]),
+                    high=(self._goal_x_range[1],
+                          self._goal_y_range[1])
                 )
+        elif self._goal_mode == "curriculum-radius":
+            self.goal_sampling_radius += self._goal_sampling_radius_increment
+            puck_position = self.get_body_com("puck"[:2])
+            bounds = np.array([puck_position - self.goal_sampling_radius,
+                               puck_position + self.goal_sampling_radius])
+            bounds = np.clip(bounds, -1, 1)
 
+            goal = np.random.uniform(
+                low=bounds[0, :], high=bounds[1, :]
+            )
+            from pprint import pprint; import ipdb; ipdb.set_trace(context=30)
+
+            qpos[self.QPOS_GOAL_INDS] = goal
+        else:
+            raise ValueError("Invalid goal mode")
         # TODO: remnants from rllab -> gym conversion
         # qacc = np.zeros(self.sim.data.qacc.shape[0])
         # ctrl = np.zeros(self.sim.data.ctrl.shape[0])
