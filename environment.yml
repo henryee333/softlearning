@@ -1,4 +1,4 @@
-name: softlearning-public
+name: softlearning
 channels:
 - defaults
 - conda-forge
