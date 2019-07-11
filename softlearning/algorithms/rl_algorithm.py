@@ -42,6 +42,7 @@ class RLAlgorithm(Checkpointable):
             eval_deterministic=True,
             eval_render_kwargs=None,
             video_save_frequency=0,
+            save_training_video_frequency=0,
             session=None,
     ):
         """
@@ -58,7 +59,9 @@ class RLAlgorithm(Checkpointable):
             eval_render_kwargs (`None`, `dict`): Arguments to be passed for
                 rendering evaluation rollouts. `None` to disable rendering.
         """
+        self._save_training_video_frequency = save_training_video_frequency
         self.sampler = sampler
+        self.sampler.set_save_training_video_frequency(save_training_video_frequency)
 
         self._n_epochs = n_epochs
         self._n_train_repeat = n_train_repeat
@@ -266,8 +269,9 @@ class RLAlgorithm(Checkpointable):
                 self._timestep_after_hook()
                 gt.stamp('timestep_after_hook')
 
-            training_paths = self.sampler.get_last_n_paths(
-                math.ceil(self._epoch_length / self.sampler._max_path_length))
+            training_paths = self._training_paths()
+            # self.sampler.get_last_n_paths(
+            #     math.ceil(self._epoch_length / self.sampler._max_path_length))
             gt.stamp('training_paths')
             evaluation_paths = self._evaluation_paths(
                 policy, evaluation_environment)
@@ -331,10 +335,32 @@ class RLAlgorithm(Checkpointable):
 
         self._training_after_hook()
 
+        del evaluation_paths
+
         yield {'done': True, **diagnostics}
+
+    def _training_paths(self):
+        paths = self.sampler.get_last_n_paths(
+            math.ceil(self._epoch_length / self.sampler._max_path_length))
+
+        if self._save_training_video_frequency:
+            fps = 1 // getattr(self._training_environment, 'dt', 1/30)
+            for i, path in enumerate(reversed(paths)):
+                if i % self._save_training_video_frequency == 0:
+                    video_frames = path.pop('images')
+                    video_file_name = f'training_path_{self._epoch}_{i}.mp4'
+                    video_file_path = os.path.join(
+                        os.getcwd(), 'videos', video_file_name)
+                    save_video(video_frames, video_file_path, fps=fps)
+
+        return paths
 
     def _evaluation_paths(self, policy, evaluation_env):
         if self._eval_n_episodes < 1: return ()
+
+        should_save_video = (
+            self._video_save_frequency > 0
+            and self._epoch % self._video_save_frequency == 0)
 
         with policy.set_deterministic(self._eval_deterministic):
             paths = rollouts(
@@ -342,21 +368,18 @@ class RLAlgorithm(Checkpointable):
                 evaluation_env,
                 policy,
                 self.sampler._max_path_length,
-                render_kwargs=self._eval_render_kwargs)
-
-        should_save_video = (
-            self._video_save_frequency > 0
-            and self._epoch % self._video_save_frequency == 0)
+                render_kwargs=(self._eval_render_kwargs if should_save_video
+                               else {}))
 
         if should_save_video:
             fps = 1 // getattr(self._training_environment, 'dt', 1/30)
             for i, path in enumerate(paths):
                 video_frames = path.pop('images')
-                video_file_name = f'evaluation_path_{self._epoch}_{i}.avi'
+                video_file_name = f'evaluation_path_{self._epoch}_{i}.mp4'
                 video_file_path = os.path.join(
                     os.getcwd(), 'videos', video_file_name)
                 save_video(video_frames, video_file_path, fps=fps)
-
+                del video_frames
         return paths
 
     def _evaluate_rollouts(self, episodes, env):
@@ -408,10 +431,6 @@ class RLAlgorithm(Checkpointable):
             > self._max_train_repeat_per_timestep * self._timestep)
         if trained_enough: return
 
-        import time
-        t0 = time.time()
-        self._training_batch()
-        t0 = time.time()
         for i in range(self._n_train_repeat):
             self._do_training(
                 iteration=timestep,

@@ -8,7 +8,7 @@ from . import (
     remote_sampler,
     base_sampler,
     simple_sampler,
-    goal_sampler)
+    goal_sampler,
     pool_sampler,
     nn_sampler)
 

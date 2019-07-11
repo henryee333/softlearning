@@ -8,7 +8,8 @@ from .base_sampler import BaseSampler
 
 
 class SimpleSampler(BaseSampler):
-    def __init__(self, **kwargs):
+    def __init__(self,
+                 **kwargs):
         super(SimpleSampler, self).__init__(**kwargs)
 
         self._path_length = 0
@@ -19,6 +20,8 @@ class SimpleSampler(BaseSampler):
         self._n_episodes = 0
         self._current_observation = None
         self._total_samples = 0
+        self._save_training_video_frequency = False
+        self._images = []
 
     @property
     def _policy_input(self):
@@ -51,8 +54,11 @@ class SimpleSampler(BaseSampler):
         if self._current_observation is None:
             self._current_observation = self.env.reset()
 
-        action = self.policy.actions_np(self._policy_input)[0]
+        if self._save_training_video_frequency:
+            self._images.append(
+                self.env.render(mode='rgb_array', width=480, height=480))
 
+        action = self.policy.actions_np(self._policy_input)[0]
         next_observation, reward, terminal, info = self.env.step(action)
         self._path_length += 1
         self._path_return += reward
@@ -82,7 +88,13 @@ class SimpleSampler(BaseSampler):
                 if key != 'infos'
             })
 
-            self._last_n_paths.appendleft(last_path)
+            if self._save_training_video_frequency:
+                self._last_n_paths.appendleft({
+                    'images': self._images,
+                    **last_path,
+                })
+            else:
+                self._last_n_paths.appendleft(last_path)
 
             self._max_path_return = max(self._max_path_return,
                                         self._path_return)
@@ -94,6 +106,7 @@ class SimpleSampler(BaseSampler):
             self._path_length = 0
             self._path_return = 0
             self._current_path = defaultdict(list)
+            self._images = []
 
             self._n_episodes += 1
         else:
@@ -117,3 +130,6 @@ class SimpleSampler(BaseSampler):
         })
 
         return diagnostics
+
+    def set_save_training_video_frequency(self, flag):
+        self._save_training_video_frequency = flag
