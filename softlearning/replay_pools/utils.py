@@ -3,6 +3,7 @@ from . import (
     union_pool,
     goal_replay_pool,
     hindsight_experience_replay_pool)
+    prioritized_experience_replay_pool,
 
 
 POOL_CLASSES = {
@@ -11,6 +12,7 @@ POOL_CLASSES = {
     'UnionPool': union_pool.UnionPool,
     'HindsightExperienceReplayPool': (
         hindsight_experience_replay_pool.HindsightExperienceReplayPool),
+    'PrioritizedExperienceReplayPool': prioritized_experience_replay_pool.PrioritizedExperienceReplayPool,
 }
 
 DEFAULT_REPLAY_POOL = 'SimpleReplayPool'

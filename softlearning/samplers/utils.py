@@ -9,6 +9,8 @@ from . import (
     base_sampler,
     simple_sampler,
     goal_sampler)
+    pool_sampler,
+    nn_sampler)
 
 
 def get_sampler_from_variant(variant, *args, **kwargs):
@@ -18,6 +20,8 @@ def get_sampler_from_variant(variant, *args, **kwargs):
         'Sampler': base_sampler.BaseSampler,
         'SimpleSampler': simple_sampler.SimpleSampler,
         'GoalSampler': goal_sampler.GoalSampler,
+        'PoolSampler': pool_sampler.PoolSampler,
+        'NNSampler': nn_sampler.NNSampler,
     }
 
     sampler_params = variant['sampler_params']

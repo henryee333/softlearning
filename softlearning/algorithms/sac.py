@@ -11,7 +11,7 @@ from flatten_dict import flatten
 
 from softlearning.models.utils import flatten_input_structure
 from .rl_algorithm import RLAlgorithm
-
+from softlearning.replay_pools.prioritized_experience_replay_pool import PrioritizedExperienceReplayPool
 
 tfd = tfp.distributions
 
@@ -52,6 +52,7 @@ class SAC(RLAlgorithm):
             goal_classifier_params_directory=None,
             save_full_state=False,
             save_eval_paths=False,
+            per_alpha=1,
             **kwargs,
     ):
         """
@@ -86,6 +87,13 @@ class SAC(RLAlgorithm):
         self._Q_targets = tuple(tf.keras.models.clone_model(Q) for Q in Qs)
 
         self._pool = pool
+        if isinstance(self._pool, PrioritizedExperienceReplayPool) and \
+           self._pool._mode == 'Bellman_Error':
+            self._per = True
+            self._per_alpha = per_alpha
+        else:
+            self._per = False
+
         self._plotter = plotter
 
         self._policy_lr = lr
@@ -199,6 +207,10 @@ class SAC(RLAlgorithm):
             tf.compat.v1.losses.mean_squared_error(
                 labels=Q_target, predictions=Q_value, weights=0.5)
             for Q_value in Q_values)
+
+        self._bellman_errors = tf.reduce_mean(tuple(
+            tf.math.squared_difference(Q_target, Q_value)
+            for Q_value in Q_values), axis=0)
 
         self._Q_optimizers = tuple(
             tf.compat.v1.train.AdamOptimizer(
@@ -329,8 +341,9 @@ class SAC(RLAlgorithm):
 
     def _do_training(self, iteration, batch):
         """Runs the operations for updating training and target ops."""
-        feed_dict = self._get_feed_dict(iteration, batch)
+        feed_dict = self._get_feed_dict(None, batch)
         self._session.run(self._training_ops, feed_dict)
+
         if self._her_iters:
             # Q: Is it better to build a large batch and take one grad step, or
             # resample many mini batches and take many grad steps?
@@ -343,6 +356,15 @@ class SAC(RLAlgorithm):
         if iteration % self._target_update_interval == 0:
             # Run target ops here.
             self._update_target()
+
+    def get_bellman_error(self, batch):
+        feed_dict = self._get_feed_dict(None, batch)
+
+        ## TO TRY: weight by bellman error without entropy
+        ## - sweep over per_alpha
+
+        ## Question: why the min over the Q's?
+        return self._session.run(self._bellman_errors, feed_dict)
 
     def _get_feed_dict(self, iteration, batch):
         """Construct a TensorFlow feed dictionary from a sample batch."""
@@ -358,8 +380,8 @@ class SAC(RLAlgorithm):
         if self._goal_classifier:
             if 'images' in batch.keys():
                 images = batch['images']
-                goal_sin = batch['observations'][:,-2].reshape((-1, 1))
-                goal_cos = batch['observations'][:,-1].reshape((-1, 1))
+                goal_sin = batch['observations'][:, -2].reshape((-1, 1))
+                goal_cos = batch['observations'][:, -1].reshape((-1, 1))
                 goals = np.arctan2(goal_sin, goal_cos)
             else:
                 images = batch['observations'][:, :32*32*3].reshape((-1, 32, 32, 3))
