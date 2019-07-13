@@ -372,6 +372,19 @@ class SAC(RLAlgorithm):
         batch_flat = flatten(batch)
         placeholders_flat = flatten(self._placeholders)
 
+        if np.random.rand() < 1e-4 and 'pixels' in batch['observations']:
+            import os
+            from skimage import io
+            random_idx = np.random.randint(
+                batch['observations']['pixels'].shape[0])
+            image_save_dir = os.path.join(os.getcwd(), 'pixels')
+            image_save_path = os.path.join(
+                image_save_dir, f'observation_{iteration}_batch.png')
+            if not os.path.exists(image_save_dir):
+                os.makedirs(image_save_dir)
+            io.imsave(image_save_path,
+                      batch['observations']['pixels'][random_idx].copy())
+
         feed_dict = {
             placeholders_flat[key]: batch_flat[key]
             for key in placeholders_flat.keys()

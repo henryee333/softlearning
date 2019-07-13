@@ -5,6 +5,7 @@ from . import (
     hindsight_experience_replay_pool,
     prioritized_experience_replay_pool,
     multigoal_replay_pool,
+    partial_save_pool,
 )
 
 
@@ -16,6 +17,7 @@ POOL_CLASSES = {
         hindsight_experience_replay_pool.HindsightExperienceReplayPool),
     'PrioritizedExperienceReplayPool': prioritized_experience_replay_pool.PrioritizedExperienceReplayPool,
     'MultiGoalReplayPool': multigoal_replay_pool.MultiGoalReplayPool,
+    'PartialSaveReplayPool': partial_save_pool.PartialSaveReplayPool,
 }
 
 DEFAULT_REPLAY_POOL = 'SimpleReplayPool'
