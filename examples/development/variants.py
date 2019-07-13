@@ -29,7 +29,7 @@ ALGORITHM_PARAMS_BASE = {
     'type': 'SAC',
 
     'kwargs': {
-        'epoch_length': 20, #50,
+        'epoch_length': 1000, #50,
         'train_every_n_steps': 1,
         'n_train_repeat': 1, #tune.grid_search([1, 2, 5, 10]),
         'eval_n_episodes': 3, # num of eval rollouts
@@ -57,7 +57,7 @@ ALGORITHM_PARAMS_ADDITIONAL = {
             'tau': 5e-3,
             'target_entropy': 'auto', #tune.sample_from([-3, -5, -7]),#'auto',
             'action_prior': 'uniform',
-            'n_initial_exploration_steps': 20, #int(1e3),
+            'n_initial_exploration_steps': int(1e3),
             'her_iters': tune.grid_search([0]),
         }
     },
@@ -119,7 +119,7 @@ MAX_PATH_LENGTH_PER_UNIVERSE_DOMAIN_TASK = {
             'TurnResetFreeRandomGoal-v0': 100,
             'TurnFreeValve3Fixed-v0': tune.grid_search([50]),
             'TurnFreeValve3RandomReset-v0': 50,
-            'TurnFreeValve3ResetFree-v0': tune.grid_search([1]),
+            'TurnFreeValve3ResetFree-v0': tune.grid_search([50]),
             'TurnFreeValve3ResetFreeSwapGoal-v0': tune.grid_search([100]),
             'TurnFreeValve3ResetFreeRandomGoal-v0': tune.grid_search([100]),
             'TurnFreeValve3FixedResetSwapGoal-v0': 50,
