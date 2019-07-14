@@ -341,7 +341,7 @@ class SAC(RLAlgorithm):
 
     def _do_training(self, iteration, batch):
         """Runs the operations for updating training and target ops."""
-        feed_dict = self._get_feed_dict(None, batch)
+        feed_dict = self._get_feed_dict(iteration, batch)
         self._session.run(self._training_ops, feed_dict)
 
         if self._her_iters:
