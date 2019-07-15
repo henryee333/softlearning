@@ -208,7 +208,7 @@ class SAC(RLAlgorithm):
                 labels=Q_target, predictions=Q_value, weights=0.5)
             for Q_value in Q_values)
 
-        self._bellman_errors = tf.reduce_mean(tuple(
+        self._bellman_errors = tf.reduce_min(tuple(
             tf.math.squared_difference(Q_target, Q_value)
             for Q_value in Q_values), axis=0)
 
