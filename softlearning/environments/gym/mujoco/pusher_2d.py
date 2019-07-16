@@ -41,7 +41,7 @@ class Pusher2dEnv(Serializable, MujocoEnv):
     # always drawn in (-1, 0), regardless of the actual goal.
 
     def __init__(self,
-                 goal=(0, -1),
+                 #goal=(0, -1),
                  eef_to_puck_distance_cost_coeff=0,
                  goal_to_puck_distance_cost_coeff=1.0,
                  ctrl_cost_coeff=0.1,
@@ -183,8 +183,6 @@ class Pusher2dEnv(Serializable, MujocoEnv):
             eef_to_puck_distances = eef_to_puck_distances.squeeze()
             goal_to_puck_distances = goal_to_puck_distances.squeeze()
 
-        # print("eef_pos: ", eef_pos)
-        # print("puck_pos: ", obj_pos)
         info =  {
             'eef_to_puck_distance': eef_to_puck_distances,
             'goal_to_puck_distance': goal_to_puck_distances
@@ -293,6 +291,8 @@ class Pusher2dEnv(Serializable, MujocoEnv):
         # qacc = np.zeros(self.sim.data.qacc.shape[0])
         # ctrl = np.zeros(self.sim.data.ctrl.shape[0])
         # full_state = np.concatenate((qpos, qvel, qacc, ctrl))
+
+        qpos[self.QPOS_JOINT_INDS] = np.array([np.pi/4, -np.pi/4, -np.pi/2])
 
         self.set_state(np.array(qpos), np.array(qvel))
 
