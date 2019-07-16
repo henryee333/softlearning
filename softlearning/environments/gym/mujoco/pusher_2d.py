@@ -75,6 +75,7 @@ class Pusher2dEnv(Serializable, MujocoEnv):
         self._eef_to_puck_distance_cost_coeff = eef_to_puck_distance_cost_coeff
         self._goal_to_puck_distance_cost_coeff = goal_to_puck_distance_cost_coeff
         self._ctrl_cost_coeff = ctrl_cost_coeff
+        self._first_step = True
 
         self._puck_initial_x_range = puck_initial_x_range
         self._puck_initial_y_range = puck_initial_y_range
@@ -208,20 +209,29 @@ class Pusher2dEnv(Serializable, MujocoEnv):
             qpos = self._last_qpos.copy()
             qvel = self.init_qvel.copy().squeeze()
         elif self._reset_mode == "random": # random puck pos + random arm angles
+            qvel = self.init_qvel.copy().squeeze()
+            qvel[self.QPOS_PUCK_INDS] = 0
+            qvel[self.QPOS_GOAL_INDS] = 0
+
             qpos = self.init_qpos.copy()
-            qpos[self.QPOS_JOINT_INDS] = np.random.uniform(
-                low=(-np.pi, -np.pi*3/4, -np.pi/2),
-                high=(np.pi, np.pi*3/4, np.pi/2)
-            )
+            valid_arm_pos = False
+            while (not valid_arm_pos):
+                qpos[self.QPOS_JOINT_INDS] = np.random.uniform(
+                    low=(-np.pi, -np.pi*3/4, -np.pi/2),
+                    high=(np.pi, np.pi*3/4, np.pi/2)
+                )
+                self.set_state(np.array(qpos), np.array(qvel))
+                eef_pos = self.get_body_com("distal_4")[:2]
+                if np.all(np.abs(eef_pos) <= 0.9):
+                    valid_arm_pos = True
+
             qpos[self.QPOS_PUCK_INDS] = np.random.uniform(
                 low=(self._puck_initial_x_range[0],
                      self._puck_initial_y_range[0]),
                 high=(self._puck_initial_x_range[1],
                       self._puck_initial_y_range[1])
                 )
-            qvel = self.init_qvel.copy().squeeze()
-            qvel[self.QPOS_PUCK_INDS] = 0
-            qvel[self.QPOS_GOAL_INDS] = 0
+
         elif self._reset_mode == "random_puck": # just randomize puck pos
             qpos = self.init_qpos.copy()
 
@@ -291,8 +301,9 @@ class Pusher2dEnv(Serializable, MujocoEnv):
         # qacc = np.zeros(self.sim.data.qacc.shape[0])
         # ctrl = np.zeros(self.sim.data.ctrl.shape[0])
         # full_state = np.concatenate((qpos, qvel, qacc, ctrl))
-
-        qpos[self.QPOS_JOINT_INDS] = np.array([np.pi/4, -np.pi/4, -np.pi/2])
+        if self._first_step:
+            qpos[self.QPOS_JOINT_INDS] = np.array([np.pi/4, -np.pi/4, -np.pi/2])
+            self._first_step = False
 
         self.set_state(np.array(qpos), np.array(qvel))
 
