@@ -133,3 +133,17 @@ class SimpleSampler(BaseSampler):
 
     def set_save_training_video_frequency(self, flag):
         self._save_training_video_frequency = flag
+
+    def __getstate__(self):
+        state = super().__getstate__()
+        state['_last_n_paths'] = type(state['_last_n_paths'])((
+            type(path)((
+                (key, value)
+                for key, value in path.items()
+                if key != 'images'
+            ))
+            for path in state['_last_n_paths']
+        ))
+
+        del state['_images']
+        return state

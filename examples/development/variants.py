@@ -845,8 +845,8 @@ def get_variant_spec_base(universe, domain, task, policy, algorithm):
         variant_spec['sampler_params']['type'] == 'RemoteSampler'
         variant_spec['algorithm_params']['kwargs']['max_train_repeat_per_timestep'] = 1
     if task == 'TurnFreeValve3ResetFree-v0':
-        # pass
-        variant_spec['replay_pool_params']['type'] = 'PartialSaveReplayPool'
+        pass
+        # variant_spec['replay_pool_params']['type'] = 'PartialSaveReplayPool'
         # variant_spec['replay_pool_params']['kwargs']['mode'] = 'Bellman_Error'
         # variant_spec['replay_pool_params']['kwargs']['per_alpha'] = tune.grid_search([0, 0.1, 0.5, 1])
         # DEFAULT_OBSERVATION_KEYS = (
@@ -859,15 +859,6 @@ def get_variant_spec_base(universe, domain, task, policy, algorithm):
         #     'target_orientation_sin',
         #     'object_to_target_relative_position',
         # )
-        env_obs_keys = variant_spec['environment_params'][
-            'training']['kwargs']['observation_keys']
-        non_image_obs_keys = tuple(key for key in env_obs_keys if key != 'pixels')
-        variant_spec['replay_pool_params']['kwargs']['obs_save_keys'] = non_image_obs_keys
-
-        non_object_obs_keys = tuple(key for key in env_obs_keys if 'object' not in key)
-        variant_spec['policy_params']['kwargs']['observation_keys'] = variant_spec[
-            'exploration_policy_params']['kwargs']['observation_keys'] = variant_spec[
-                'Q_params']['kwargs']['observation_keys'] = non_object_obs_keys
     if task == 'TurnFreeValve3ResetFreeSwapGoal-v0':
         pass
         # variant_spec['replay_pool_params']['type'] = 'MultiGoalReplayPool'
@@ -888,6 +879,18 @@ def get_variant_spec_base(universe, domain, task, policy, algorithm):
         # variant_spec['policy_params']['kwargs']['observation_keys'] = variant_spec[
         #     'exploration_policy_params']['kwargs']['observation_keys'] = variant_spec[
         #         'Q_params']['kwargs']['observation_keys'] = DEFAULT_OBSERVATION_KEYS
+    env_kwargs = variant_spec['environment_params']['training']['kwargs']
+    if "pixel_wrapper_kwargs" in env_kwargs.keys() and \
+       "device_path" not in env_kwargs.keys():
+        env_obs_keys = variant_spec['environment_params'][
+            'training']['kwargs']['observation_keys']
+        non_image_obs_keys = tuple(key for key in env_obs_keys if key != 'pixels')
+        variant_spec['replay_pool_params']['kwargs']['obs_save_keys'] = non_image_obs_keys
+
+        non_object_obs_keys = tuple(key for key in env_obs_keys if 'object' not in key)
+        variant_spec['policy_params']['kwargs']['observation_keys'] = variant_spec[
+            'exploration_policy_params']['kwargs']['observation_keys'] = variant_spec[
+                'Q_params']['kwargs']['observation_keys'] = non_object_obs_keys
 
     return variant_spec
 
