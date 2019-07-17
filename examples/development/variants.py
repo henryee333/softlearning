@@ -736,7 +736,7 @@ def evaluation_environment_params(spec):
         # }
         pass
     elif training_environment_params['task'] == 'TurnFreeValve3ResetFreeSwapGoal-v0':
-        eval_environment_params['task'] = 'TurnFreeValve3FixedResetSwapGoal-v0' #'TurnFreeValve3RandomReset-v0'
+        eval_environment_params['task'] = 'TurnFreeValve3ResetFreeSwapGoalEval-v0' #'TurnFreeValve3RandomReset-v0'
         eval_environment_params['kwargs'] = {
             'reward_keys': (
                 'object_to_target_position_distance_cost',
@@ -755,9 +755,8 @@ def evaluation_environment_params(spec):
             # 'initial_distribution_path': '/mnt/sda/ray_results/gym/DClaw/TurnFreeValve3ResetFree-v0/2019-06-30T18-53-06-baseline_both_push_and_turn_log_rew/id=38872574-seed=6880_2019-06-30_18-53-07whkq1aax/',
             # 'reset_from_corners': False,
         }
-
-
     return eval_environment_params
+
 
 def get_variant_spec_base(universe, domain, task, policy, algorithm):
     algorithm_params = deep_update(
@@ -860,10 +859,10 @@ def get_variant_spec_base(universe, domain, task, policy, algorithm):
         #     'object_to_target_relative_position',
         # )
     if task == 'TurnFreeValve3ResetFreeSwapGoal-v0':
-        pass
+        # pass
         # variant_spec['replay_pool_params']['type'] = 'MultiGoalReplayPool'
-        # # variant_spec['replay_pool_params']['kwargs']['mode'] = 'Bellman_Error'
-        # # variant_spec['replay_pool_params']['kwargs']['per_alpha'] = tune.grid_search([0, 0.1, 0.5, 1])
+        variant_spec['replay_pool_params']['kwargs']['mode'] = 'Bellman_Error'
+        variant_spec['replay_pool_params']['kwargs']['per_alpha'] = tune.grid_search([0.25, 0.5, 0.75])
         # DEFAULT_OBSERVATION_KEYS = (
         #     'claw_qpos',
         #     'object_position',
@@ -882,8 +881,8 @@ def get_variant_spec_base(universe, domain, task, policy, algorithm):
     env_kwargs = variant_spec['environment_params']['training']['kwargs']
     if "pixel_wrapper_kwargs" in env_kwargs.keys() and \
        "device_path" not in env_kwargs.keys():
-        env_obs_keys = variant_spec['environment_params'][
-            'training']['kwargs']['observation_keys']
+        env_obs_keys = env_kwargs['observation_keys']
+
         non_image_obs_keys = tuple(key for key in env_obs_keys if key != 'pixels')
         variant_spec['replay_pool_params']['kwargs']['obs_save_keys'] = non_image_obs_keys
 
