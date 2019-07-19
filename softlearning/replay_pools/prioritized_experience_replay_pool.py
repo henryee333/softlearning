@@ -42,13 +42,14 @@ class PrioritizedExperienceReplayPool(SimpleReplayPool):
 
         if self._mode == "Bellman_Error":
             if self._counter % self._recompute_priorities_period == 0:
-                # Recompute priorities of random batch from pool
-                all_indices = np.arange(self._size)
+                # Recompute priorities of batch sampled uniformly at random from pool
+                random_indices = super().random_indices(
+                    batch_size * self._recompute_priorities_period)
                 bellman_errors = np.squeeze(
                     self._algorithm.get_bellman_error(
-                        self.random_batch(batch_size * self._recompute_priorities_period)))
+                        self.batch_by_indices(random_indices)))
                 priorities = bellman_errors ** self._per_alpha
-                self._priorities[all_indices] = priorities
+                self._priorities[random_indices] = priorities
             else:
                 bellman_errors = np.squeeze(
                     self._algorithm.get_bellman_error(self.batch_by_indices(indices)))
