@@ -19,7 +19,7 @@ def replay_pool_pickle_path(checkpoint_dir):
     return os.path.join(checkpoint_dir, 'replay_pool.pkl')
 
 
-def plot_position_heatmap(positions, xy_max, save_path):
+def plot_position_heatmap(positions, xy_max, save_path, title=""):
     num_points = positions.shape[0]
     plt.figure()
     ax = plt.gca()
@@ -34,14 +34,14 @@ def plot_position_heatmap(positions, xy_max, save_path):
     ax.ticklabel_format(axis='both', style='sci')
     plt.colorbar()
     plt.gca().set_aspect('equal', adjustable='box')
-    plt.title("Prop of bins with >x visits:\n(x=1, {0:.2f}), (x={1}, {2:.2f})".format(
+    plt.title(title + "Prop of bins with >x visits:\n(x=1, {0:.2f}), (x={1}, {2:.2f})".format(
         support_metric[0], thresholds[1], support_metric[1]))
-    plt.savefig(save_path)
+    plt.savefig(save_path, bbox_inches='tight')
     plt.close()
     return support_metric, thresholds
 
 
-def plot_angle_distribution(angles, save_path):
+def plot_angle_distribution(angles, save_path, title=""):
     num_angles = angles.shape[0]
     plt.figure()
     ax = plt.gca()
@@ -63,13 +63,20 @@ def plot_angle_distribution(angles, save_path):
     ax.set_xlim([-1 - 5*std, 1 + 5*std])
     ax.set_ylim([-1 - 5*std, 1 + 5*std])
     plt.gca().set_aspect('equal', adjustable='box')
-    plt.savefig(save_path)
+    plt.title(title)
+    plt.savefig(save_path, bbox_inches='tight')
+    plt.title(title)
     plt.close()
 
     bins = np.histogram(angles, bins=100, range=(-np.pi, np.pi))[0]
     thresholds = [1, num_angles // 500]
     support_metric = [np.sum(bins >= i) / bins.shape[0] for i in thresholds]
     return support_metric, thresholds
+
+
+def get_checkpoint_number(path):
+    checkpoint_num = os.path.basename(os.path.normpath(os.path.dirname(path)))
+    return int(checkpoint_num.split('checkpoint_')[1])
 
 
 experiment_dir = sys.argv[1]
@@ -82,6 +89,7 @@ for experiment_root in sorted(glob.iglob(
         for checkpoint_dir in sorted(glob.iglob(
                 os.path.join(experiment_root, 'checkpoint_*')))
     ]
+    experience_paths.sort(key=get_checkpoint_number)
 
     position_heatmap_directory = experiment_root + '/object_position_heatmaps/'
     orient_dist_directory = experiment_root + '/object_orientation_heatmaps/'
@@ -94,19 +102,16 @@ for experiment_root in sorted(glob.iglob(
     object_angles_total = []
     pools = []
     support_metrics, thresholds = [], []
-    checkpoint_nums = []
+    checkpoint_nums = [0]
     i = 0
-    for experience_path in experience_paths:
-        checkpoint_num = os.path.basename(os.path.normpath(os.path.dirname(experience_path)))
 
+    for experience_path in experience_paths:
         # if i % 2 == 0:
         #     two_set_angles = []
         #     two_set_positions = []
         with gzip.open(experience_path, 'rb') as f:
             pool = pickle.load(f)
             pools.append(pool)
-            from pprint import pprint; import ipdb; ipdb.set_trace(context=30)
-
             obs = pool['observations']
             screw_positions = obs['object_position'][:, :2]
             screw_positions_total.append(screw_positions)
@@ -127,31 +132,35 @@ for experiment_root in sorted(glob.iglob(
         #     thresholds.append(threshold)
         #     checkpoint_nums.append(int(checkpoint_num.split("checkpoint_")[1]))
 
-
+        checkpoint_num = os.path.basename(os.path.normpath(os.path.dirname(experience_path)))
+        checkpoint_nums.append(int(checkpoint_num.split("checkpoint_")[1]))
+        title = "Steps {}-{}k\n".format(
+            checkpoint_nums[-2],
+            checkpoint_nums[-1])
+        last_checkpoint_num = checkpoint_num
         save_path = position_heatmap_directory + checkpoint_num + '.png'
-        support_metric, threshold = plot_position_heatmap(screw_positions, xy_max, save_path)
+        support_metric, threshold = plot_position_heatmap(screw_positions, xy_max, save_path, title)
 
         save_path = orient_dist_directory + checkpoint_num + '.png'
-        angular_support_metric, angular_threshold = plot_angle_distribution(object_angles, save_path)
+        angular_support_metric, angular_threshold = plot_angle_distribution(object_angles, save_path, title)
 
         support_metrics.append(support_metric + angular_support_metric)
         thresholds.append(threshold + angular_threshold)
-        checkpoint_nums.append(int(checkpoint_num.split("checkpoint_")[1]))
         i += 1
 
     screw_positions_total = np.concatenate(screw_positions_total, axis=0)
     object_angles_total = np.concatenate(object_angles_total, axis=0)
 
     save_path = position_heatmap_directory + '/total.png'
-    plot_position_heatmap(screw_positions_total, xy_max, save_path)
+    plot_position_heatmap(screw_positions_total, xy_max, save_path, "Total Pool\n")
 
     save_path = orient_dist_directory + '/total.png'
-    plot_angle_distribution(object_angles_total, save_path)
+    plot_angle_distribution(object_angles_total, save_path, "Total Pool")
 
     support_metrics = np.array(support_metrics)
     sorted_checkpoint_nums, m1, m2, ang_m1, ang_m2 = zip(
         *sorted(zip(
-            checkpoint_nums,
+            checkpoint_nums[1:],
             support_metrics[:, 0],
             support_metrics[:, 1],
             support_metrics[:, 2],
@@ -165,7 +174,7 @@ for experiment_root in sorted(glob.iglob(
     plt.legend(['n=1', 'n={}'.format(thresholds[0][1])])
     plt.title('Support of Object XY Position Distribution Over Time')
     plt.ylim([0, 1.1])
-    plt.savefig(position_heatmap_directory + '/support_metric.png')
+    plt.savefig(position_heatmap_directory + '/support_metric.png', bbox_inches='tight')
     plt.close()
 
     plt.figure()
@@ -176,7 +185,7 @@ for experiment_root in sorted(glob.iglob(
     plt.legend(['n=1', 'n={}'.format(thresholds[0][3])])
     plt.title('Support of Object Z-Angle Distribution Over Time')
     plt.ylim([0, 1.1])
-    plt.savefig(orient_dist_directory + '/support_metric.png')
+    plt.savefig(orient_dist_directory + '/support_metric.png', bbox_inches='tight')
     plt.close()
 
 
